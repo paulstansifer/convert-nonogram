@@ -277,6 +277,7 @@ fn main() -> std::io::Result<()> {
             clap::Arg::with_name("OUTPUT")
                 .long("output")
                 .short("o")
+                .takes_value(true)
                 .help("output file (outputs to stdout if omitted)"),
         )
         .arg(
