@@ -19,7 +19,7 @@ This is what I do, since [`pbnsolve`] provides useful information about difficul
 Then, to evaluate an image, do:
 
 ```
-convert-nonogram /path/to/image | pbnsolve -tu
+convert-nonogram examples/tea.png | pbnsolve -tu
 ```
 
 (`-t` requests detailed difficulty output, and `-u` requires checking for uniqueness. You can add `-b` to suppress output of the solved grid, but it's useful when debugging a non-unique nonogram)
@@ -31,12 +31,14 @@ convert-nonogram /path/to/image | pbnsolve -tu
 Make sure to install `nonogrid` with `cargo install --features=xml,web nonogrid` to allow parsing the XML format (and to enable directly downloading nonograms from the web, because why not). Then, to evaluate an image, do:
 
 ```
-convert-nonogram /path/to/image | nonogrid
+convert-nonogram examples/tea.png | nonogrid
 ```
 
 ### With the Olsak solver
-The olsak solver comes in a [tarball] and doesn't even have a makefile! (Just do `gcc grid.c -o grid` to build it.) It accepts a different input format.
+The [Olsak solver] comes in a tarball and doesn't even have a makefile! (Just do `gcc grid.c -o grid` to build it.) It accepts a different input format.
+
+[Olsak solver]:  http://www.olsak.net/grid.html
 
 ```
-convert-nonogram /path/to/image --olsak | grid -
+convert-nonogram examples/tea.png --olsak | grid -
 ```
