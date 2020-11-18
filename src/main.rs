@@ -43,13 +43,13 @@ fn image_to_clues(
     let mut x_clues: Vec<Vec<Clue>> = Vec::new();
     let mut y_clues: Vec<Vec<Clue>> = Vec::new();
 
-    //let mut image_string = String::new();
+    let mut white_squares_found: u32 = 0;
 
     // Gather the palette
     for y in 0..height {
         for x in 0..width {
             let pixel: Rgba<u8> = image.get_pixel(x, y);
-            let _pixel_char = palette.entry(pixel).or_insert_with(|| {
+            let color = palette.entry(pixel).or_insert_with(|| {
                 let this_char = next_char;
                 let (r, g, b, _) = pixel.channels4();
                 let hex = format!("{:02X}{:02X}{:02X}", r, g, b);
@@ -61,8 +61,27 @@ fn image_to_clues(
                     hex: hex,
                 };
             });
+
+            if color.hex == "FFFFFF" {
+                white_squares_found += 1;
+            }
         }
     }
+
+    if white_squares_found < (width + height) {
+        eprintln!(
+            "convert-nonogram: warning: {} is a very small number of white squares",
+            white_squares_found
+        );
+    }
+
+    if (width * height - white_squares_found) < (width + height) {
+        eprintln!(
+            "convert-nonogram: warning: {} is a very small number of non-white squares",
+            width * height - white_squares_found
+        );
+    }
+
     if palette.len() > 20 {
         panic!(
             "{} colors detected. Nonograms with more than 20 colors are not supported. (Or fun.)",
@@ -70,6 +89,28 @@ fn image_to_clues(
         );
     }
 
+    // Find similar colors
+    for (rgba, color) in &palette {
+        for (rgba2, color2) in &palette {
+            if color == color2 {
+                continue;
+            }
+            let (r, g, b, _) = rgba.channels4();
+            let (r2, g2, b2, _) = rgba2.channels4();
+            if (r2 as i16 - r as i16).abs()
+                + (g2 as i16 - g as i16).abs()
+                + (b2 as i16 - b as i16).abs()
+                < 30
+            {
+                eprintln!(
+                    "convert-nonogram: warning: very similar colors found: {} and {}",
+                    color.hex, color2.hex
+                );
+            }
+        }
+    }
+
+    // Generate row clues
     for y in 0..height {
         let mut clues = Vec::<Clue>::new();
 
@@ -98,6 +139,8 @@ fn image_to_clues(
         }
         x_clues.push(clues);
     }
+
+    // Generate column clues
     for x in 0..width {
         let mut clues = Vec::<Clue>::new();
 
@@ -186,7 +229,8 @@ fn emit_webpbn(
     return res;
 }
 
-fn emit_olsak(    palette: HashMap<image::Rgba<u8>, Color>,
+fn emit_olsak(
+    palette: HashMap<image::Rgba<u8>, Color>,
     x_clues: Vec<Vec<Clue>>,
     y_clues: Vec<Vec<Clue>>,
 ) -> String {
@@ -196,7 +240,10 @@ fn emit_olsak(    palette: HashMap<image::Rgba<u8>, Color>,
         if color.hex == "FFFFFF" {
             res.push_str("   0:   #FFFFFF   white\n");
         } else {
-            res.push_str(&format!("   {}:{}  #{}   {}\n", color.ch, color.ch, color.hex, color.name));
+            res.push_str(&format!(
+                "   {}:{}  #{}   {}\n",
+                color.ch, color.ch, color.hex, color.name
+            ));
         }
     }
     res.push_str(": rows\n");
@@ -205,14 +252,14 @@ fn emit_olsak(    palette: HashMap<image::Rgba<u8>, Color>,
             res.push_str(&format!("{}{} ", clue.count, clue.color.ch));
         }
         res.push_str("\n");
-    } 
+    }
     res.push_str(": columns\n");
     for column in y_clues {
         for clue in column {
             res.push_str(&format!("{}{} ", clue.count, clue.color.ch));
         }
         res.push_str("\n");
-    } 
+    }
     return res;
 }
 
@@ -235,7 +282,7 @@ fn main() -> std::io::Result<()> {
         .arg(
             clap::Arg::with_name("olsak")
                 .long("olsak")
-                .help("emit nonogram in the 'olsak' format")
+                .help("emit nonogram in the 'olsak' format"),
         )
         .get_matches();
     let img = image::open(matches.value_of("INPUT").unwrap()).unwrap();
