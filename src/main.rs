@@ -265,7 +265,7 @@ fn emit_olsak(
 
 fn main() -> std::io::Result<()> {
     let matches = clap::App::new("convert-nonogram")
-        .version("0.1.0")
+        .version("0.1.1")
         .author("Paul Stansifer")
         .about("Converts images of nonogram solutions to puzzles")
         .arg(
