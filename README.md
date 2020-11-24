@@ -1,6 +1,10 @@
 # `convert-nonogram`
 
-`convert-nonogram` is a tool that converts images to nonograms. (Why don't we just use indexed PNGs as the standard interchange format for nonograms?) Currently, it only outputs the widely-used XML-based `webpbn` format and the `olsak` format.
+`convert-nonogram` is a tool that converts images to nonograms. Currently, it only outputs the widely-used XML-based `webpbn` format and the `olsak` format (with the extension `.g`).
+
+`convert-nonogram` does an exact image-to-nonogram format conversion. If you're looking for something that will take an arbitrary image and make a solveable (black and white) nonogram out of it, you can try [Walter Koster's tool].
+
+[Walter Koster's tool]: https://liacs.leidenuniv.nl/~kosterswa/nono/sjoerd/indexeng.html
 
 ## How to use it
 
@@ -22,7 +26,7 @@ Then, to evaluate an image, do:
 convert-nonogram examples/tea.png | pbnsolve -tu
 ```
 
-(`-t` requests detailed difficulty output, and `-u` requires checking for uniqueness. You can add `-b` to suppress output of the solved grid, but it's useful when debugging a non-unique nonogram)
+(`-t` requests detailed difficulty output, and `-u` requires checking for uniqueness. You can add `-aL` (or `-aE`; I don't fully understand the difference) to stop solving when it's not possible to proceed with "line logic".  You can add `-b` to suppress output of the solved grid, but it's useful when debugging a non-unique nonogram or partially-solvable nonogram. `pbnsolve`'s README file documents its other flags.)
 
 
 Here's a somewhat tricky nonogram that's solveable with only single-line reasoning. The "Lines processed" (relative to "Lines in puzzle", which is the sum of the width and height) is the best indicator of difficulty, I think:
@@ -103,7 +107,7 @@ Processing Time: 0.001668 sec
 
 ### With `nonogrid`
 
-`nonogrid` can provide a better and more comprehensive visual representation of ambiguities in non-unique nonograms.
+`nonogrid` can provide a better and more comprehensive visual representation of ambiguities in non-unique nonograms. Sadly, it doesn't tell you anything about the difficulty of a nonogram.
 
 Make sure to install `nonogrid` with `cargo install --features=xml,web nonogrid` to allow parsing the XML format (and to enable directly downloading nonograms from the web, because why not). Then, to evaluate an image, do:
 
@@ -112,10 +116,22 @@ convert-nonogram examples/tea.png | nonogrid
 ```
 
 ### With the Olsak solver
-The [Olsak solver] comes in a tarball and doesn't even have a makefile! (Just do `gcc grid.c -o grid` to build it.) It accepts a different input format.
+The [Olsak solver] comes in a tarball and doesn't even have a makefile! (Just do `gcc grid.c -o grid` to build it.) It accepts a different input format. It does provide some difficulty information, but I haven't yet learned to understand it.
 
 [Olsak solver]:  http://www.olsak.net/grid.html
 
 ```
 convert-nonogram examples/tea.png --olsak | grid -
 ```
+
+### With Nonny
+
+[Nonny] is a nonogram editor that can open Olask-formatted nonograms. Its solver is a bit unsophisticated, but you can watch it work, which can give you an idea of what parts of the puzzle are easy to deal with and what parts are trickier. 
+
+[Nonny]: https://github.com/gkikola/nonny
+
+```
+convert-nonogram examples/tea.png --olsak > ~/.local/share/nonny/puzzles/tea.g
+```
+
+To export a puzzle from Nonny, I, uh, take a screenshot of the thumbnail in the Gimp, crop it, and resize the image with "none" as the interpolation technique. Maybe `convert-nonogram` ought to accept some other nonogram formats as input.

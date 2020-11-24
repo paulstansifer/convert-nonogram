@@ -17,7 +17,6 @@ struct Color {
     hex: String,
 }
 
-// TODO: this is an awkward representation of a palette.
 fn image_to_clues(
     image: &DynamicImage,
 ) -> (
@@ -57,7 +56,7 @@ fn image_to_clues(
                 next_char = (next_char as u8 + 1) as char;
                 return Color {
                     ch: this_char,
-                    name: hex.clone(),
+                    name: format!("{}{}", this_char, hex),
                     hex: hex,
                 };
             });
@@ -236,10 +235,11 @@ fn emit_olsak(
 ) -> String {
     let mut res = String::new();
     res.push_str("#d\n");
+
+    // Nonny doesn't like it if white isn't the first color in the palette.
+    res.push_str("   0:   #FFFFFF   white\n");
     for (_, color) in palette {
-        if color.hex == "FFFFFF" {
-            res.push_str("   0:   #FFFFFF   white\n");
-        } else {
+        if color.hex != "FFFFFF" {            
             res.push_str(&format!(
                 "   {}:{}  #{}   {}\n",
                 color.ch, color.ch, color.hex, color.name
@@ -265,7 +265,7 @@ fn emit_olsak(
 
 fn main() -> std::io::Result<()> {
     let matches = clap::App::new("convert-nonogram")
-        .version("0.1.1")
+        .version("0.1.2")
         .author("Paul Stansifer")
         .about("Converts images of nonogram solutions to puzzles")
         .arg(

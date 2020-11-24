@@ -91,7 +91,7 @@ checksum = "c478836e029dcef17fb47c89023448c64f781a046e0300e257ad8225ae59afab"
 
 [[package]]
 name = "convert-nonogram"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "clap",
  "image",
