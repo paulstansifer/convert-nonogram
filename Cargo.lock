@@ -99,6 +99,7 @@ dependencies = [
  "image",
  "indoc",
  "quick-xml",
+ "stride",
 ]
 
 [[package]]
@@ -384,6 +385,12 @@ name = "scopeguard"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d29ab0c6d3fc0ee92fe66e2d99f700eab17a8d57d1c1d3b748380fb20baa78cd"
+
+[[package]]
+name = "stride"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "66fbe380626ec180138f45d13b4afa4e458ab14ea199a603649f3d84a75ac254"
 
 [[package]]
 name = "strsim"

@@ -6,16 +6,21 @@ pub struct Clue {
     pub count: u8,
 }
 
+#[derive(PartialEq, Eq, Clone, Copy, Hash)]
+pub struct Color(pub u8);
+
+pub static BACKGROUND: Color = Color(0);
+
 #[derive(PartialEq, Eq, Clone)]
-pub struct Color {
+pub struct ColorInfo {
     pub ch: char,
     pub name: String,
     pub hex: String,
+    pub color: Color,
 }
 
 pub struct Puzzle {
-    // TODO: this is kinda an awkward representation, driven by input images. Refactor!
-    pub palette: HashMap<image::Rgba<u8>, Color>,
+    pub palette: HashMap<Color, ColorInfo>, // should include the background!
     pub rows: Vec<Vec<Clue>>,
     pub cols: Vec<Vec<Clue>>,
 }

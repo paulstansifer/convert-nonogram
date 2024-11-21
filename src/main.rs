@@ -4,6 +4,7 @@ extern crate image;
 mod export;
 mod import;
 mod puzzle;
+mod solve;
 
 fn main() -> std::io::Result<()> {
     let matches = clap::App::new("convert-nonogram")

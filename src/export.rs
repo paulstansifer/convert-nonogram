@@ -25,7 +25,7 @@ pub fn emit_webpbn(puzzle: &Puzzle) -> String {
         for clue in column {
             res.push_str(&format!(
                 r#"<count color="{}">{}</count>"#,
-                clue.color.name, clue.count
+                puzzle.palette[&clue.color].name, clue.count
             ));
         }
         res.push_str("</line>\n");
@@ -39,7 +39,7 @@ pub fn emit_webpbn(puzzle: &Puzzle) -> String {
         for clue in row {
             res.push_str(&format!(
                 r#"<count color="{}">{}</count>"#,
-                clue.color.name, clue.count
+                puzzle.palette[&clue.color].name, clue.count
             ));
         }
         res.push_str("</line>\n");
@@ -69,14 +69,20 @@ pub fn emit_olsak(puzzle: &Puzzle) -> String {
     res.push_str(": rows\n");
     for row in &puzzle.rows {
         for clue in row {
-            res.push_str(&format!("{}{} ", clue.count, clue.color.ch));
+            res.push_str(&format!(
+                "{}{} ",
+                clue.count, puzzle.palette[&clue.color].ch
+            ));
         }
         res.push_str("\n");
     }
     res.push_str(": columns\n");
     for column in &puzzle.cols {
         for clue in column {
-            res.push_str(&format!("{}{} ", clue.count, clue.color.ch));
+            res.push_str(&format!(
+                "{}{} ",
+                clue.count, puzzle.palette[&clue.color].ch
+            ));
         }
         res.push_str("\n");
     }

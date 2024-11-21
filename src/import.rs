@@ -3,21 +3,21 @@ use std::collections::HashMap;
 
 use puzzle::Clue;
 
-use crate::puzzle::{self, Color, Puzzle};
+use crate::puzzle::{self, Color, ColorInfo, Puzzle, BACKGROUND};
 
 pub fn image_to_puzzle(image: &DynamicImage) -> Puzzle {
     let (width, height) = image.dimensions();
 
-    let mut next_char = 'a';
-    let mut palette = HashMap::<image::Rgba<u8>, Color>::new();
+    let mut palette = HashMap::<image::Rgba<u8>, ColorInfo>::new();
 
     // pbnsolve output looks weird if the default color isn't called "white".
     palette.insert(
         image::Rgba::<u8>([255, 255, 255, 255]),
-        Color {
+        ColorInfo {
             ch: '.',
             name: "white".to_owned(),
             hex: "FFFFFF".to_owned(),
+            color: puzzle::BACKGROUND,
         },
     );
 
@@ -25,6 +25,9 @@ pub fn image_to_puzzle(image: &DynamicImage) -> Puzzle {
     let mut cols: Vec<Vec<Clue>> = Vec::new();
 
     let mut white_squares_found: u32 = 0;
+
+    let mut next_char = 'a';
+    let mut next_color_idx: u8 = 1; // BACKGROUND is 0
 
     // Gather the palette
     for y in 0..height {
@@ -34,12 +37,16 @@ pub fn image_to_puzzle(image: &DynamicImage) -> Puzzle {
                 let this_char = next_char;
                 let (r, g, b, _) = pixel.channels4();
                 let hex = format!("{:02X}{:02X}{:02X}", r, g, b);
+                let this_color = Color(next_color_idx);
 
                 next_char = (next_char as u8 + 1) as char;
-                return Color {
+                next_color_idx += 1;
+
+                return ColorInfo {
                     ch: this_char,
                     name: format!("{}{}", this_char, hex),
                     hex: hex,
+                    color: this_color,
                 };
             });
 
@@ -104,7 +111,7 @@ pub fn image_to_puzzle(image: &DynamicImage) -> Puzzle {
         let mut run = 1;
         for x in 0..width + 1 {
             let color = if x < width {
-                Some(&palette[&image.get_pixel(x, y)])
+                Some(&palette[&image.get_pixel(x, y)].color)
             } else {
                 None
             };
@@ -114,7 +121,7 @@ pub fn image_to_puzzle(image: &DynamicImage) -> Puzzle {
             }
             match cur_color {
                 None => {}
-                Some(color) if color.hex == "FFFFFF" => {}
+                Some(color) if *color == puzzle::BACKGROUND => {}
                 Some(color) => clues.push(Clue {
                     color: color.clone(),
                     count: run,
@@ -134,7 +141,7 @@ pub fn image_to_puzzle(image: &DynamicImage) -> Puzzle {
         let mut run = 1;
         for y in 0..height + 1 {
             let color = if y < height {
-                Some(&palette[&image.get_pixel(x, y)])
+                Some(&palette[&image.get_pixel(x, y)].color)
             } else {
                 None
             };
@@ -144,7 +151,7 @@ pub fn image_to_puzzle(image: &DynamicImage) -> Puzzle {
             }
             match cur_color {
                 None => {}
-                Some(color) if color.hex == "FFFFFF" => {}
+                Some(color) if *color == BACKGROUND => {}
                 Some(color) => clues.push(Clue {
                     color: color.clone(),
                     count: run,
@@ -157,7 +164,10 @@ pub fn image_to_puzzle(image: &DynamicImage) -> Puzzle {
     }
 
     return Puzzle {
-        palette,
+        palette: palette
+            .into_iter()
+            .map(|(_, color_info)| (color_info.color.clone(), color_info))
+            .collect(),
         rows,
         cols,
     };
