@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 
-#[derive(PartialEq, Eq, Clone)]
+#[derive(PartialEq, Eq, Clone, Copy)]
 pub struct Clue {
     pub color: Color,
-    pub count: u8,
+    pub count: u16,
 }
 
-#[derive(PartialEq, Eq, Clone, Copy, Hash)]
+#[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
 pub struct Color(pub u8);
 
 pub static BACKGROUND: Color = Color(0);

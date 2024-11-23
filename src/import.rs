@@ -42,12 +42,12 @@ pub fn image_to_puzzle(image: &DynamicImage) -> Puzzle {
                 next_char = (next_char as u8 + 1) as char;
                 next_color_idx += 1;
 
-                return ColorInfo {
+                ColorInfo {
                     ch: this_char,
                     name: format!("{}{}", this_char, hex),
                     hex: hex,
                     color: this_color,
-                };
+                }
             });
 
             if color.hex == "FFFFFF" {
@@ -123,7 +123,7 @@ pub fn image_to_puzzle(image: &DynamicImage) -> Puzzle {
                 None => {}
                 Some(color) if *color == puzzle::BACKGROUND => {}
                 Some(color) => clues.push(Clue {
-                    color: color.clone(),
+                    color: *color,
                     count: run,
                 }),
             }
@@ -153,7 +153,7 @@ pub fn image_to_puzzle(image: &DynamicImage) -> Puzzle {
                 None => {}
                 Some(color) if *color == BACKGROUND => {}
                 Some(color) => clues.push(Clue {
-                    color: color.clone(),
+                    color: *color,
                     count: run,
                 }),
             }
@@ -163,12 +163,12 @@ pub fn image_to_puzzle(image: &DynamicImage) -> Puzzle {
         cols.push(clues);
     }
 
-    return Puzzle {
+    Puzzle {
         palette: palette
-            .into_iter()
-            .map(|(_, color_info)| (color_info.color.clone(), color_info))
+            .into_values()
+            .map(|color_info| (color_info.color, color_info))
             .collect(),
         rows,
         cols,
-    };
+    }
 }

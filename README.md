@@ -15,7 +15,7 @@ All images supported by the [image] crate are supported as input, but if you try
 [image]: https://crates.io/crates/image
 
 ### With `pbnsolve`
-This is what I do, since [`pbnsolve`] provides useful information about difficulty. You'll have to download and install it [from a tarball].
+This is what I do, since [`pbnsolve`] provides useful information about difficulty. You'll have to download and install it [from a tarball] (and probably edit the `Makefile` to help it find `libxml2` -- under Ubuntu, you'll need to do `sudo apt install libxml2-dev`)
 
 [`pbnsolve`]: https://webpbn.com/pbnsolve.html
 [from a tarball]: https://code.google.com/archive/p/pbnsolve/downloads

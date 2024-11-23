@@ -1,8 +1,12 @@
 {
     "cSpell.words": [
         "defaultcolor",
+        "fmt",
+        "heur",
+        "idx",
         "img",
         "indoc",
+        "ndarray",
         "Nonograms",
         "olsak",
         "pbn",

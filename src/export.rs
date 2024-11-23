@@ -11,12 +11,12 @@ pub fn emit_webpbn(puzzle: &Puzzle) -> String {
         <puzzle type="grid" defaultcolor="white">
         <source>convert-nonogram</source>
         "#});
-    for (_, color) in &puzzle.palette {
+    for color in puzzle.palette.values() {
         res.push_str(&format!(
             r#"<color name="{}" char="{}">{}</color>"#,
             color.name, color.ch, color.hex
         ));
-        res.push_str("\n");
+        res.push('\n');
     }
 
     res.push_str(r#"<clues type="columns">"#);
@@ -31,7 +31,7 @@ pub fn emit_webpbn(puzzle: &Puzzle) -> String {
         res.push_str("</line>\n");
     }
     res.push_str(r#"</clues>"#);
-    res.push_str("\n");
+    res.push('\n');
 
     res.push_str(r#"<clues type="rows">"#);
     for row in &puzzle.rows {
@@ -45,11 +45,12 @@ pub fn emit_webpbn(puzzle: &Puzzle) -> String {
         res.push_str("</line>\n");
     }
     res.push_str(r#"</clues>"#);
-    res.push_str("\n");
+    res.push('\n');
 
     res.push_str(r#"</puzzle></puzzleset>"#);
-    res.push_str("\n");
-    return res;
+    res.push('\n');
+
+    res
 }
 
 pub fn emit_olsak(puzzle: &Puzzle) -> String {
@@ -58,7 +59,7 @@ pub fn emit_olsak(puzzle: &Puzzle) -> String {
 
     // Nonny doesn't like it if white isn't the first color in the palette.
     res.push_str("   0:   #FFFFFF   white\n");
-    for (_, color) in &puzzle.palette {
+    for color in puzzle.palette.values() {
         if color.hex != "FFFFFF" {
             res.push_str(&format!(
                 "   {}:{}  #{}   {}\n",
@@ -74,7 +75,7 @@ pub fn emit_olsak(puzzle: &Puzzle) -> String {
                 clue.count, puzzle.palette[&clue.color].ch
             ));
         }
-        res.push_str("\n");
+        res.push('\n');
     }
     res.push_str(": columns\n");
     for column in &puzzle.cols {
@@ -84,7 +85,8 @@ pub fn emit_olsak(puzzle: &Puzzle) -> String {
                 clue.count, puzzle.palette[&clue.color].ch
             ));
         }
-        res.push_str("\n");
+        res.push('\n');
     }
-    return res;
+
+    res
 }

@@ -2,9 +2,10 @@ extern crate clap;
 extern crate image;
 
 mod export;
+mod grid_solve;
 mod import;
+mod line_solve;
 mod puzzle;
-mod solve;
 
 fn main() -> std::io::Result<()> {
     let matches = clap::App::new("convert-nonogram")
@@ -28,6 +29,12 @@ fn main() -> std::io::Result<()> {
                 .long("olsak")
                 .help("emit nonogram in the 'olsak' format"),
         )
+        .arg(
+            clap::Arg::with_name("solve")
+                .long("solve")
+                .short("s")
+                .help("solve the nonogram"),
+        )
         .get_matches();
     let img = image::open(matches.value_of("INPUT").unwrap()).unwrap();
 
@@ -39,13 +46,16 @@ fn main() -> std::io::Result<()> {
         export::emit_webpbn(&puzzle)
     };
 
-    match matches.value_of("OUTPUT") {
-        None => {
+    if let Some(filename) = matches.value_of("OUTPUT") {
+        if filename == "-" {
             print!("{}", output);
-        }
-        Some(filename) => {
+        } else {
             std::fs::write(filename, output)?;
         }
+    }
+
+    if matches.is_present("solve") {
+        grid_solve::solve(&puzzle).unwrap();
     }
 
     Ok(())
