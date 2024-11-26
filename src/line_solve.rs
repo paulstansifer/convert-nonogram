@@ -105,11 +105,11 @@ impl Iterator for PossibleArrangements {
             self.gaps[0] += 1;
         } else {
             for i in 0..self.gaps.len() {
-                if self.gaps[i] == 0 {
-                    continue;
-                }
                 if i == self.gaps.len() - 1 {
                     return None;
+                }
+                if self.gaps[i] == 0 {
+                    continue;
                 }
                 self.gaps[i] = 0;
                 self.gaps[i + 1] += 1;
