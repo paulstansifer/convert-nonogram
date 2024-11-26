@@ -6,7 +6,7 @@ mod grid_solve;
 mod import;
 mod line_solve;
 mod puzzle;
-use std::path::PathBuf;
+use std::{convert::TryFrom, io::Read, path::PathBuf};
 
 use clap::Parser;
 
@@ -51,6 +51,19 @@ fn main() -> std::io::Result<()> {
             let img = image::open(args.input_path).unwrap();
 
             import::solution_to_puzzle(import::image_to_solution(&img))
+        }
+        NonogramFormat::CharGrid => {
+            let mut grid_string = String::new();
+            if args.input_path == PathBuf::from("-") {
+                std::io::stdin()
+                    .read_to_string(&mut grid_string)
+                    .expect("bad read_to_string!");
+            } else {
+                grid_string = String::from_utf8(std::fs::read(args.input_path).unwrap())
+                    .expect("not valid UTF-8!");
+            };
+
+            import::solution_to_puzzle(import::char_grid_to_solution(&grid_string))
         }
         _ => todo!(),
     };

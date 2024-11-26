@@ -1,5 +1,9 @@
 use image::{DynamicImage, GenericImageView, Pixel, Rgba};
-use std::collections::HashMap;
+use std::{
+    char::from_digit,
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
+    thread::available_parallelism,
+};
 
 use puzzle::Clue;
 
@@ -46,6 +50,121 @@ pub fn image_to_solution(image: &DynamicImage) -> Solution {
             });
 
             grid[x as usize][y as usize] = color.color;
+        }
+    }
+
+    Solution {
+        palette: palette
+            .into_values()
+            .map(|color_info| (color_info.color, color_info))
+            .collect(),
+        grid,
+    }
+}
+
+pub fn char_grid_to_solution(char_grid: &str) -> Solution {
+    let mut palette = HashMap::<char, ColorInfo>::new();
+
+    // We want deterministic behavior
+    let mut unused_chars = BTreeSet::<char>::new();
+    for ch in char_grid.chars() {
+        if ch == '\n' {
+            continue;
+        }
+        unused_chars.insert(ch);
+    }
+
+    let mut bg_ch: Option<char> = None;
+
+    for possible_bg in [' ', '.', '_', 'w', 'W', '·', '☐', '0'] {
+        if unused_chars.contains(&possible_bg) {
+            bg_ch = Some(possible_bg);
+        }
+    }
+
+    let bg_ch = match bg_ch {
+        Some(x) => x,
+        None => {
+            eprintln!("convert-nonogram: Warning: unable to guess which character is supposed to be the background; using the upper-left corner");
+            char_grid.trim_start().chars().next().unwrap()
+        }
+    };
+
+    palette.insert(
+        bg_ch,
+        ColorInfo {
+            ch: bg_ch,
+            name: "white".to_string(),
+            rgb: (255, 255, 255),
+            color: BACKGROUND,
+        },
+    );
+    unused_chars.remove(&bg_ch);
+
+    let mut next_color: u8 = 1;
+
+    for possible_black in ['#', 'B', 'b', '.', '■', '█', '1'] {
+        if unused_chars.contains(&possible_black) {
+            palette.insert(
+                possible_black,
+                ColorInfo {
+                    ch: possible_black,
+                    name: "black".to_string(),
+                    rgb: (0, 0, 0),
+                    color: Color(next_color),
+                },
+            );
+            next_color += 1;
+            unused_chars.remove(&possible_black);
+            break;
+        }
+    }
+
+    let mut unused_colors = BTreeMap::<char, (u8, u8, u8)>::new();
+    unused_colors.insert('r', (255, 0, 0));
+    unused_colors.insert('g', (0, 255, 0));
+    unused_colors.insert('b', (0, 0, 255));
+
+    unused_colors.insert('y', (255, 255, 0));
+    unused_colors.insert('c', (0, 255, 255));
+    unused_colors.insert('m', (255, 0, 255));
+
+    for i in (1 as u8)..(9 as u8) {
+        unused_colors.insert(from_digit(i.into(), 10).unwrap(), (22 * i, 22 * i, 22 * i));
+    }
+
+    for ch in unused_chars {
+        let rgb = unused_colors
+            .remove(&ch)
+            .unwrap_or_else(|| unused_colors.pop_first().unwrap().1);
+
+        palette.insert(
+            ch,
+            ColorInfo {
+                ch: ch,
+                name: ch.to_string(),
+                rgb: rgb,
+                color: Color(next_color),
+            },
+        );
+        next_color += 1;
+    }
+
+    let mut grid: Vec<Vec<Color>> = vec![];
+
+    // TODO: check that rows are the same length!
+    for (y, row) in char_grid
+        .split("\n")
+        .filter(|line| !line.is_empty())
+        .enumerate()
+    {
+        for (x, ch) in row.chars().enumerate() {
+            // There's probably a better way than this...
+            grid.resize(std::cmp::max(grid.len(), x + 1), vec![]);
+            let new_height = std::cmp::max(grid[x].len(), y + 1);
+            grid[x].resize(new_height, BACKGROUND);
+
+            grid[x][y] = palette[&ch].color;
         }
     }
 
