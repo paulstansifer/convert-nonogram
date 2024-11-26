@@ -10,8 +10,8 @@
             "name": "Debug",
             "program": "${workspaceFolder}/target/debug/convert-nonogram",
             "args": [
-                "/media/paul/WD - linux/home/paul/2d/nonograms/fire_submarine.png",
-                "--solve"
+                // "/media/paul/WD - linux/home/paul/2d/nonograms/fire_submarine.png",
+                "examples/rust_logo.png"
             ],
             "cwd": "${workspaceFolder}"
         }

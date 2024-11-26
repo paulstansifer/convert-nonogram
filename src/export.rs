@@ -12,9 +12,10 @@ pub fn emit_webpbn(puzzle: &Puzzle) -> String {
         <source>convert-nonogram</source>
         "#});
     for color in puzzle.palette.values() {
+        let (r, g, b) = color.rgb;
         res.push_str(&format!(
-            r#"<color name="{}" char="{}">{}</color>"#,
-            color.name, color.ch, color.hex
+            r#"<color name="{}" char="{}">{:02X}{:02X}{:02X}</color>"#,
+            color.name, color.ch, r, g, b
         ));
         res.push('\n');
     }
@@ -60,10 +61,11 @@ pub fn emit_olsak(puzzle: &Puzzle) -> String {
     // Nonny doesn't like it if white isn't the first color in the palette.
     res.push_str("   0:   #FFFFFF   white\n");
     for color in puzzle.palette.values() {
-        if color.hex != "FFFFFF" {
+        if color.rgb != (255, 255, 255) {
+            let (r, g, b) = color.rgb;
             res.push_str(&format!(
-                "   {}:{}  #{}   {}\n",
-                color.ch, color.ch, color.hex, color.name
+                "   {}:{}  #{:02X}{:02X}{:02X}   {}\n",
+                color.ch, color.ch, r, g, b, color.name
             ));
         }
     }

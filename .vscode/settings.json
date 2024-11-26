@@ -1,5 +1,6 @@
 {
     "cSpell.words": [
+        "Buf",
         "defaultcolor",
         "dyn",
         "fgb",
@@ -11,6 +12,7 @@
         "indoc",
         "ndarray",
         "Nonograms",
+        "num",
         "olsak",
         "pbn",
         "pbnsolve",

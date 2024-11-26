@@ -100,6 +100,22 @@ fn find_best_lane<'a, 'b>(
     res
 }
 
+fn print_grid(grid: &Grid, puzzle: &Puzzle) {
+    for row in grid.rows() {
+        for cell in row {
+            match cell {
+                None => {
+                    print!("?");
+                }
+                Some(c) => {
+                    print!("{}", puzzle.palette[c].ch);
+                }
+            }
+        }
+        println!();
+    }
+}
+
 pub fn solve(puzzle: &Puzzle) -> anyhow::Result<Report> {
     let mut grid = Grid::default((puzzle.rows.len(), puzzle.cols.len()));
 
@@ -126,6 +142,7 @@ pub fn solve(puzzle: &Puzzle) -> anyhow::Result<Report> {
                 Some(lane) => lane,
                 None => {
                     if will_scrub {
+                        print_grid(&grid, puzzle);
                         bail!("Cannot solve");
                     } else {
                         allowed_skims = 0; // Try again, but scrub.
@@ -190,19 +207,7 @@ pub fn solve(puzzle: &Puzzle) -> anyhow::Result<Report> {
         }
     }
 
-    for row in grid.rows() {
-        for cell in row {
-            match cell {
-                None => {
-                    print!(" ");
-                }
-                Some(c) => {
-                    print!("{}", c.0);
-                }
-            }
-        }
-        println!();
-    }
+    print_grid(&grid, puzzle);
 
     Ok(Report {})
 }

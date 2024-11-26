@@ -11,8 +11,8 @@ repository = "https://github.com/paulstansifer/convert-nonogram"
 
 [dependencies]
 image = "0.23.11"
-clap = "2.33.3"
 quick-xml = "0.37.1"
 indoc = "1.0"
 ndarray = "0.16.1"
 anyhow = "1.0.93"
+clap = { version = "4.5.21", features = ["derive"] }

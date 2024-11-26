@@ -6,56 +6,75 @@ mod grid_solve;
 mod import;
 mod line_solve;
 mod puzzle;
+use std::path::PathBuf;
+
+use clap::Parser;
+
+#[derive(Clone, Copy, Debug, clap::ValueEnum, Default)]
+enum NonogramFormat {
+    #[default]
+    /// Any image supported by the `image` crate (when used as output, defaults to `.png`)
+    Image,
+    /// A grid of characters. Some characters have default colors associated with them;
+    /// others are chosen arbitrarily.
+    CharGrid,
+    /// The format used by the 'olsak' solver.
+    Olsak,
+    /// The widely-used format associated with http://webpbn.com.
+    Webpbn,
+}
+
+#[derive(clap::Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    /// Input path; use "-" for stdin
+    input_path: PathBuf,
+
+    /// Output path for format conversion; use "-" for stdout.
+    /// If omitted, solves the nonogram and reports on the difficulty.
+    output_path: Option<PathBuf>,
+
+    /// Format to expect the input to be in
+    #[arg(short, long, value_enum, default_value_t)]
+    input_format: NonogramFormat,
+
+    /// Format to emit as output
+    #[arg(short, long, value_enum, default_value_t)]
+    output_format: NonogramFormat,
+}
 
 fn main() -> std::io::Result<()> {
-    let matches = clap::App::new("convert-nonogram")
-        .version("0.1.2")
-        .author("Paul Stansifer")
-        .about("Converts images of nonogram solutions to puzzles")
-        .arg(
-            clap::Arg::with_name("INPUT")
-                .help("image input file")
-                .required(true),
-        )
-        .arg(
-            clap::Arg::with_name("OUTPUT")
-                .long("output")
-                .short("o")
-                .takes_value(true)
-                .help("output file (outputs to stdout if omitted)"),
-        )
-        .arg(
-            clap::Arg::with_name("olsak")
-                .long("olsak")
-                .help("emit nonogram in the 'olsak' format"),
-        )
-        .arg(
-            clap::Arg::with_name("solve")
-                .long("solve")
-                .short("s")
-                .help("solve the nonogram"),
-        )
-        .get_matches();
-    let img = image::open(matches.value_of("INPUT").unwrap()).unwrap();
+    let args = Args::parse();
 
-    let puzzle = import::image_to_puzzle(&img);
+    let puzzle = match args.input_format {
+        NonogramFormat::Image => {
+            let img = image::open(args.input_path).unwrap();
 
-    let output = if matches.is_present("olsak") {
-        export::emit_olsak(&puzzle)
-    } else {
-        export::emit_webpbn(&puzzle)
+            import::solution_to_puzzle(import::image_to_solution(&img))
+        }
+        _ => todo!(),
     };
 
-    if let Some(filename) = matches.value_of("OUTPUT") {
-        if filename == "-" {
-            print!("{}", output);
-        } else {
-            std::fs::write(filename, output)?;
+    match args.output_path {
+        Some(path) => {
+            let output_data = match args.output_format {
+                NonogramFormat::Olsak => export::emit_olsak(&puzzle),
+                NonogramFormat::Webpbn => export::emit_webpbn(&puzzle),
+                // NonogramFormat::Image =>
+                _ => {
+                    todo!()
+                }
+            };
+            if path == PathBuf::from("-") {
+                print!("{}", output_data);
+            } else {
+                std::fs::write(path, output_data)?;
+            }
         }
-    }
 
-    if matches.is_present("solve") {
-        grid_solve::solve(&puzzle).unwrap();
+        None => {
+            grid_solve::solve(&puzzle).unwrap();
+        }
     }
 
     Ok(())
