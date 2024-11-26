@@ -328,6 +328,9 @@ pub fn skim_line(clues: &[Clue], mut lane: ArrayViewMut1<Cell>) -> anyhow::Resul
 }
 
 pub fn skim_heuristic(clues: &[Clue], lane: ArrayView1<Cell>) -> i32 {
+    if clues.is_empty() {
+        return 1000; // Can solve it right away!
+    }
     let mut longest_foregroundable_span = 0;
     let mut cur_foregroundable_span = 0;
 
