@@ -1,7 +1,8 @@
 // They're used in tests, but it can't see that.
 #![allow(unused_macros)]
+
 use crate::puzzle::{Clue, Color, BACKGROUND};
-use anyhow::bail;
+use anyhow::{bail, Context};
 use ndarray::{ArrayView1, ArrayViewMut1};
 
 // type ClueSlice = Vec<Clue>;
@@ -132,6 +133,232 @@ pub struct ScrubReport {
     pub affected_cells: Vec<usize>,
 }
 
+fn learn_cell(
+    color: Color,
+    lane: &mut ArrayViewMut1<Cell>,
+    idx: usize,
+    affected_cells: &mut Vec<usize>,
+) -> anyhow::Result<()> {
+    if lane[idx].is_none() {
+        lane[idx] = Some(color);
+        affected_cells.push(idx);
+    } else if lane[idx] != Some(color) {
+        bail!("Learned a contradiction");
+    }
+    Ok(())
+}
+
+struct ClueAdjIterator<'a> {
+    clues: &'a [Clue],
+    i: usize,
+}
+impl<'a> ClueAdjIterator<'a> {
+    fn new(clues: &'a [Clue]) -> ClueAdjIterator<'a> {
+        ClueAdjIterator { clues: clues, i: 0 }
+    }
+}
+
+impl<'a> Iterator for ClueAdjIterator<'a> {
+    type Item = (bool, &'a Clue, bool);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.i == self.clues.len() {
+            return None;
+        }
+        let res = (
+            self.i > 0 && self.clues[self.i - 1].color == self.clues[self.i].color,
+            &self.clues[self.i],
+            self.i < self.clues.len() - 1
+                && self.clues[self.i + 1].color == self.clues[self.i].color,
+        );
+        self.i += 1;
+        Some(res)
+    }
+}
+
+///  For example, (1 2 1) with no other constraints gives
+///  .] .  .  .]  .  .]
+fn packed_extents(clues: &[Clue], lane: &ArrayViewMut1<Cell>, reversed: bool) -> Vec<usize> {
+    let mut extents: Vec<usize> = vec![];
+
+    let lane_at = |idx: usize| -> Option<Color> {
+        if reversed {
+            lane[lane.len() - 1 - idx]
+        } else {
+            lane[idx]
+        }
+    };
+    let clue_at = |idx: usize| -> &Clue {
+        if reversed {
+            &clues[clues.len() - 1 - idx]
+        } else {
+            &clues[idx]
+        }
+    };
+
+    // -- Pack to the left (we've abstracted over `reversed`) --
+
+    let mut pos = 0 as usize;
+    let mut last_color = None;
+    for clue_idx in 0..clues.len() {
+        let clue = clue_at(clue_idx);
+        if Some(clue.color) == last_color {
+            pos += 1;
+        }
+        // Scanning backwards for mismatches lets us jump farther sometimes.
+        let mut placeable = false;
+        while !placeable {
+            placeable = true;
+            for possible_pos in (pos..(pos + clue.count as usize)).rev() {
+                let cur = lane_at(possible_pos);
+
+                if cur.is_some() && cur != Some(clue.color) {
+                    pos = possible_pos + 1;
+                    placeable = false;
+                    break;
+                }
+            }
+        }
+        extents.push(pos + clue.count as usize - 1);
+        pos += clue.count as usize;
+        last_color = Some(clue.color);
+    }
+
+    // TODO: pull out into a separate function!
+
+    // We might be able to do better; are there any orphaned foreground cells off to the right?
+    // (so this `.rev()` has nothing to do with `reversed`!)
+
+    let mut cur_extent_idx = extents.len() - 1;
+    let mut i = lane.len() - 1;
+    loop {
+        if lane_at(i).is_some() && lane_at(i) != Some(BACKGROUND) {
+            // We don't check that the affected clue and the cell have the same color!
+            // That's okay for this conservative approximation, but also kinda silly.
+
+            // We ought to reel in clues until we get one of the right color, but that's hard.
+            // We're also ignoring the effects of known background squares and gaps between blocks /
+            // of the same color. Perhaps some kind of recursion is appropriate here!
+            if extents[cur_extent_idx] < i {
+                // Pull it in!
+                extents[cur_extent_idx] = i;
+            }
+            // Either way, skip past the rest of the postulated foreground cells
+            //  and keep looking.
+
+            // Fencepost farm here!
+            // Suppose we pulled a clue with width 3 into position 8:
+            //  0  1  2  3  4  5  6  7  8  9
+            //                   [      #]
+            // 8 - 3 = 5 is the next cell we need to examine. But we'll `-= 1` below, so add 1.
+            i = extents[cur_extent_idx] + 1 - clue_at(cur_extent_idx).count as usize;
+            if cur_extent_idx == 0 {
+                break;
+            }
+            cur_extent_idx -= 1;
+        }
+        if i == 0 {
+            break;
+        }
+        i -= 1;
+    }
+
+    // -- oh, but fix up the return value --
+
+    if reversed {
+        extents.reverse();
+        for extent in extents.iter_mut() {
+            *extent = lane.len() - *extent - 1;
+        }
+    }
+
+    extents
+}
+
+pub fn skim_line(clues: &[Clue], mut lane: ArrayViewMut1<Cell>) -> anyhow::Result<ScrubReport> {
+    let mut affected = Vec::<usize>::new();
+    if clues.is_empty() {
+        // Special case, so we can safely take the first and last clue.
+        for i in 0..lane.len() {
+            learn_cell(BACKGROUND, &mut lane, i, &mut affected)?
+        }
+        return Ok(ScrubReport {
+            affected_cells: affected,
+        });
+    }
+
+    let left_packed_right_extents = packed_extents(clues, &lane, false);
+    let right_packed_left_extents = packed_extents(clues, &lane, true);
+
+    for ((gap_before, clue, gap_after), (left_extent, right_extent)) in ClueAdjIterator::new(clues)
+        .zip(
+            right_packed_left_extents
+                .iter()
+                .zip(left_packed_right_extents.iter()),
+        )
+    {
+        for idx in (*left_extent)..=(*right_extent) {
+            learn_cell(clue.color, &mut lane, idx, &mut affected).context("overlap")?
+        }
+
+        if (*right_extent as i16 - *left_extent as i16) + 1 == clue.count as i16 {
+            if gap_before {
+                learn_cell(BACKGROUND, &mut lane, left_extent - 1, &mut affected).context("gb")?
+            }
+            if gap_after {
+                learn_cell(BACKGROUND, &mut lane, right_extent + 1, &mut affected).context("ga")?
+            }
+        }
+    }
+
+    let leftmost = left_packed_right_extents[0] as i16 - clues[0].count as i16;
+    let rightmost =
+        right_packed_left_extents.last().unwrap() + clues.last().unwrap().count as usize;
+
+    for i in 0..=leftmost {
+        learn_cell(BACKGROUND, &mut lane, i as usize, &mut affected).context("lopen")?
+    }
+    for i in rightmost..lane.len() {
+        learn_cell(BACKGROUND, &mut lane, i, &mut affected).context("ropen")?
+    }
+
+    Ok(ScrubReport {
+        affected_cells: affected,
+    })
+}
+
+pub fn skim_heuristic(clues: &[Clue], lane: ArrayView1<Cell>) -> i32 {
+    let mut longest_foregroundable_span = 0;
+    let mut cur_foregroundable_span = 0;
+
+    for cell in lane {
+        if cell != &Some(BACKGROUND) {
+            cur_foregroundable_span += 1;
+            longest_foregroundable_span =
+                std::cmp::max(cur_foregroundable_span, longest_foregroundable_span);
+        } else {
+            cur_foregroundable_span = 0;
+        }
+    }
+
+    let total_clue_length = clues.iter().map(|c| c.count).sum::<u16>();
+
+    let longest_clue = clues.iter().map(|c| c.count).max().unwrap();
+
+    let edge_bonus =
+        if lane.first().unwrap().is_some() && lane.first().unwrap() != &Some(BACKGROUND) {
+            2
+        } else {
+            0
+        } + if lane.last().unwrap().is_some() && lane.last().unwrap() != &Some(BACKGROUND) {
+            2
+        } else {
+            0
+        };
+
+    (total_clue_length + longest_clue) as i32 - longest_foregroundable_span + edge_bonus
+}
+
 pub fn scrub_line(cs: &[Clue], mut lane: ArrayViewMut1<Cell>) -> anyhow::Result<ScrubReport> {
     let mut scratch_lane: Vec<Cell> = vec![]; // empty for "haven't found a valid arrangement yet"
 
@@ -186,20 +413,16 @@ pub fn scrub_line(cs: &[Clue], mut lane: ArrayViewMut1<Cell>) -> anyhow::Result<
         affected_cells: vec![],
     };
 
-    for (idx, (cell, new_knowledge)) in lane.iter_mut().zip(scratch_lane.iter()).enumerate() {
-        if cell.is_none() && new_knowledge.is_some() {
-            *cell = *new_knowledge;
-
-            res.affected_cells.push(idx)
-        } else if cell.is_some() && *cell != *new_knowledge {
-            panic!("Shouldn't be possible!");
+    for (idx, new_knowledge) in scratch_lane.iter().enumerate() {
+        if let Some(color) = new_knowledge {
+            learn_cell(*color, &mut lane, idx, &mut res.affected_cells).expect("scrubbing error")
         }
     }
 
     Ok(res)
 }
 
-pub fn line_quality_heuristic(clues: &[Clue], lane: ArrayView1<Cell>) -> i32 {
+pub fn scrub_heuristic(clues: &[Clue], lane: ArrayView1<Cell>) -> i32 {
     let mut foreground_cells: i32 = 0;
     // If `space_taken == lane.len()`, the line is immediately solvable with no other knowledge.
     let mut space_taken: i32 = 0;
@@ -310,11 +533,24 @@ fn arrange_gaps_test() {
 
 // Uses `Option<Color>` everywhere, even in the clues, for simplicity, even though `None` is
 // invalid there.
-macro_rules! t_solve {
+macro_rules! t_scrub {
     ([$($color:expr, $count:expr);*] $($state:expr),*) => {
         {
             let mut initial = ndarray::arr1(&[ $($state),* ]);
             scrub_line(
+                &vec![ $( Clue { color: $color.unwrap(), count: $count} ),* ],
+                initial.rows_mut().into_iter().next().unwrap())
+                    .expect("impossible!");
+            initial
+        }
+    };
+}
+
+macro_rules! t_skim {
+    ([$($color:expr, $count:expr);*] $($state:expr),*) => {
+        {
+            let mut initial = ndarray::arr1(&[ $($state),* ]);
+            skim_line(
                 &vec![ $( Clue { color: $color.unwrap(), count: $count} ),* ],
                 initial.rows_mut().into_iter().next().unwrap())
                     .expect("impossible!");
@@ -330,41 +566,73 @@ macro_rules! t_line {
 }
 
 #[test]
-fn solve_test() {
+fn scrub_test() {
     let x = None;
     let w = Some(Color(0));
     let b = Some(Color(1));
     let r = Some(Color(2));
 
-    assert_eq!(t_solve!([b, 1]  x, x, x, x), t_line!(x, x, x, x));
+    assert_eq!(t_scrub!([b, 1]  x, x, x, x), t_line!(x, x, x, x));
 
-    assert_eq!(t_solve!([b, 1]  w, x, x, x), t_line!(w, x, x, x));
+    assert_eq!(t_scrub!([b, 1]  w, x, x, x), t_line!(w, x, x, x));
 
-    assert_eq!(t_solve!([b, 1; b, 2]  x, x, x, x), t_line!(b, w, b, b));
+    assert_eq!(t_scrub!([b, 1; b, 2]  x, x, x, x), t_line!(b, w, b, b));
 
-    assert_eq!(t_solve!([b, 1]  x, x, b, x), t_line!(w, w, b, w));
+    assert_eq!(t_scrub!([b, 1]  x, x, b, x), t_line!(w, w, b, w));
 
-    assert_eq!(t_solve!([b, 3]  x, x, x, x), t_line!(x, b, b, x));
+    assert_eq!(t_scrub!([b, 3]  x, x, x, x), t_line!(x, b, b, x));
 
-    assert_eq!(t_solve!([b, 3]  x, b, x, x, x), t_line!(x, b, b, x, w));
+    assert_eq!(t_scrub!([b, 3]  x, b, x, x, x), t_line!(x, b, b, x, w));
 
     assert_eq!(
-        t_solve!([b, 2; b, 2]  x, x, x, x, x),
+        t_scrub!([b, 2; b, 2]  x, x, x, x, x),
         t_line!(b, b, w, b, b)
     );
 
     // Different colors don't need separation, so we don't know as much:
     assert_eq!(
-        t_solve!([r, 2; b, 2]  x, x, x, x, x),
+        t_scrub!([r, 2; b, 2]  x, x, x, x, x),
         t_line!(x, r, x, b, x)
     );
+}
+
+#[test]
+fn skim_test() {
+    let x = None;
+    let w = Some(Color(0));
+    let b = Some(Color(1));
+    let r = Some(Color(2));
+
+    assert_eq!(t_skim!([b, 1]  x, x, x, x), t_line!(x, x, x, x));
+
+    assert_eq!(t_skim!([b, 1]  w, x, x, x), t_line!(w, x, x, x));
+
+    assert_eq!(t_skim!([b, 3]  x, x, x, x), t_line!(x, b, b, x));
+
+    assert_eq!(t_skim!([b, 2; b, 1]  x, x, x, x), t_line!(b, b, w, b));
+
+    assert_eq!(t_skim!([b, 1; b, 2]  x, x, x, x), t_line!(b, w, b, b));
+
+    assert_eq!(
+        t_skim!([b, 2]  x, x, x, x, x, b, b, x),
+        t_line!(w, w, w, w, w, b, b, w)
+    );
+
+    assert_eq!(t_skim!([b, 1]  x, x, b, x), t_line!(w, w, b, w));
+
+    assert_eq!(t_skim!([b, 3]  x, b, x, x, x), t_line!(x, b, b, x, w));
+
+    assert_eq!(t_skim!([b, 2; b, 2]  x, x, x, x, x), t_line!(b, b, w, b, b));
+
+    // Different colors don't need separation, so we don't know as much:
+    assert_eq!(t_skim!([r, 2; b, 2]  x, x, x, x, x), t_line!(x, r, x, b, x));
 }
 
 macro_rules! t_heur {
     ([$($color:expr, $count:expr);*] $($state:expr),*) => {
         {
             let initial = ndarray::arr1(&[ $($state),* ]);
-            line_quality_heuristic(
+            scrub_heuristic(
                 &vec![ $( Clue { color: $color.unwrap(), count: $count} ),* ],
                 initial.rows().into_iter().next().unwrap())
         }
