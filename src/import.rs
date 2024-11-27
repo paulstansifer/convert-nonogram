@@ -1,8 +1,7 @@
 use image::{DynamicImage, GenericImageView, Pixel, Rgba};
 use std::{
     char::from_digit,
-    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
-    thread::available_parallelism,
+    collections::{BTreeMap, BTreeSet, HashMap},
 };
 
 use puzzle::Clue;

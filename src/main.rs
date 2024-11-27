@@ -6,7 +6,7 @@ mod grid_solve;
 mod import;
 mod line_solve;
 mod puzzle;
-use std::{convert::TryFrom, io::Read, path::PathBuf};
+use std::{io::Read, path::PathBuf};
 
 use clap::Parser;
 

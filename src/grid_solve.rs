@@ -17,8 +17,10 @@ pub struct LaneState<'a> {
     index: ndarray::Ix,
     scrubbed: bool,
     scrub_score: i32,
+    processed_scrub_score: i32,
     skimmed: bool,
     skim_score: i32,
+    processed_skim_score: i32,
 }
 
 impl<'a> LaneState<'a> {
@@ -29,21 +31,35 @@ impl<'a> LaneState<'a> {
             index: idx,
             scrubbed: false,
             scrub_score: 0,
+            processed_scrub_score: 0,
             skimmed: false,
             skim_score: 0,
+            processed_skim_score: 0,
         };
-        res.rescore(grid);
+        res.rescore(grid, false);
         res
     }
-    fn rescore(&mut self, grid: &Grid) {
+    fn rescore(&mut self, grid: &Grid, was_processed: bool) {
         let lane = get_grid_lane(self, grid);
         if lane.iter().all(|cell| cell.is_some()) {
             self.scrub_score = std::i32::MIN;
             self.skim_score = std::i32::MIN;
             return;
         }
+        if was_processed {
+            self.processed_scrub_score = self.scrub_score;
+            self.processed_skim_score = self.skim_score;
+        }
         self.scrub_score = scrub_heuristic(self.clues, lane);
         self.skim_score = skim_heuristic(self.clues, lane);
+    }
+
+    fn effective_score(&self, to_scrub: bool) -> i32 {
+        if to_scrub {
+            self.scrub_score.saturating_sub(self.processed_scrub_score)
+        } else {
+            self.skim_score.saturating_sub(self.processed_skim_score)
+        }
     }
 }
 
@@ -79,22 +95,13 @@ fn find_best_lane<'a, 'b>(
     let mut res = None;
 
     for lane in lanes {
-        if to_scrub {
-            if lane.scrubbed {
-                continue;
-            }
-            if lane.scrub_score > best_score {
-                best_score = lane.scrub_score;
-                res = Some(lane);
-            }
-        } else {
-            if lane.skimmed {
-                continue;
-            }
-            if lane.skim_score > best_score {
-                best_score = lane.skim_score;
-                res = Some(lane);
-            }
+        if to_scrub && lane.scrubbed || (!to_scrub) && lane.skimmed {
+            continue;
+        }
+
+        if lane.effective_score(to_scrub) > best_score {
+            best_score = lane.effective_score(to_scrub);
+            res = Some(lane);
         }
     }
     res
@@ -145,6 +152,7 @@ pub fn solve(puzzle: &Puzzle) -> anyhow::Result<Report> {
                         print_grid(&grid, puzzle);
                         bail!("Cannot solve");
                     } else {
+                        print!("=>!! ");
                         allowed_skims = 0; // Try again, but scrub.
                         continue;
                     }
@@ -154,23 +162,25 @@ pub fn solve(puzzle: &Puzzle) -> anyhow::Result<Report> {
             let best_grid_lane = get_mut_grid_lane(&best_clue_lane, &mut grid);
 
             print!(
-                "{}{}",
+                "({}){}{}",
+                best_clue_lane.effective_score(will_scrub),
                 best_clue_lane.index,
                 if best_clue_lane.row { "R" } else { "C" }
             );
 
-            (
-                if will_scrub {
-                    best_clue_lane.scrubbed = true;
-                    scrubs += 1;
-                    scrub_line(best_clue_lane.clues, best_grid_lane)?
-                } else {
-                    best_clue_lane.skimmed = true;
-                    skims += 1;
-                    skim_line(best_clue_lane.clues, best_grid_lane)?
-                },
-                best_clue_lane.row,
-            )
+            let report = if will_scrub {
+                best_clue_lane.scrubbed = true;
+                scrubs += 1;
+                scrub_line(best_clue_lane.clues, best_grid_lane)?
+            } else {
+                best_clue_lane.skimmed = true;
+                skims += 1;
+                skim_line(best_clue_lane.clues, best_grid_lane)?
+            };
+
+            best_clue_lane.rescore(&grid, /*was_processed=*/ true);
+
+            (report, best_clue_lane.row)
         };
 
         print!(
@@ -200,7 +210,7 @@ pub fn solve(puzzle: &Puzzle) -> anyhow::Result<Report> {
 
         for other_lane in solve_lanes.iter_mut() {
             if other_lane.row != was_row && report.affected_cells.contains(&other_lane.index) {
-                other_lane.rescore(&grid);
+                other_lane.rescore(&grid, /*was_processed=*/ false);
                 other_lane.skimmed = false;
                 other_lane.scrubbed = false;
             }
