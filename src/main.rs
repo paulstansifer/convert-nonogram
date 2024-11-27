@@ -10,7 +10,7 @@ use std::{io::Read, path::PathBuf};
 
 use clap::Parser;
 
-#[derive(Clone, Copy, Debug, clap::ValueEnum, Default)]
+#[derive(Clone, Copy, Debug, clap::ValueEnum, Default, PartialEq, Eq)]
 enum NonogramFormat {
     #[default]
     /// Any image supported by the `image` crate (when used as output, defaults to `.png`)
@@ -46,11 +46,13 @@ struct Args {
 fn main() -> std::io::Result<()> {
     let args = Args::parse();
 
-    let puzzle = match args.input_format {
+    let (puzzle, solution) = match args.input_format {
         NonogramFormat::Image => {
             let img = image::open(args.input_path).unwrap();
 
-            import::solution_to_puzzle(import::image_to_solution(&img))
+            let solution = import::image_to_solution(&img);
+
+            (import::solution_to_puzzle(&solution), solution)
         }
         NonogramFormat::CharGrid => {
             let mut grid_string = String::new();
@@ -63,25 +65,31 @@ fn main() -> std::io::Result<()> {
                     .expect("not valid UTF-8!");
             };
 
-            import::solution_to_puzzle(import::char_grid_to_solution(&grid_string))
+            let solution = import::char_grid_to_solution(&grid_string);
+
+            (import::solution_to_puzzle(&solution), solution)
         }
         _ => todo!(),
     };
 
     match args.output_path {
         Some(path) => {
-            let output_data = match args.output_format {
-                NonogramFormat::Olsak => export::emit_olsak(&puzzle),
-                NonogramFormat::Webpbn => export::emit_webpbn(&puzzle),
-                // NonogramFormat::Image =>
-                _ => {
-                    todo!()
-                }
-            };
-            if path == PathBuf::from("-") {
-                print!("{}", output_data);
+            if args.output_format == NonogramFormat::Image {
+                export::emit_image(&solution, path).unwrap();
             } else {
-                std::fs::write(path, output_data)?;
+                let output_data = match args.output_format {
+                    NonogramFormat::Olsak => export::as_olsak(&puzzle),
+                    NonogramFormat::Webpbn => export::as_webpbn(&puzzle),
+                    NonogramFormat::Image => panic!(),
+                    _ => {
+                        todo!()
+                    }
+                };
+                if path == PathBuf::from("-") {
+                    print!("{}", output_data);
+                } else {
+                    std::fs::write(path, output_data)?;
+                }
             }
         }
 

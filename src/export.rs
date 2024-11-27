@@ -1,6 +1,10 @@
-use crate::puzzle::Puzzle;
+use std::path::Path;
 
-pub fn emit_webpbn(puzzle: &Puzzle) -> String {
+use image::{DynamicImage, GenericImage, Rgb, RgbImage};
+
+use crate::puzzle::{Puzzle, Solution};
+
+pub fn as_webpbn(puzzle: &Puzzle) -> String {
     use indoc::indoc;
 
     let mut res = String::new();
@@ -54,7 +58,7 @@ pub fn emit_webpbn(puzzle: &Puzzle) -> String {
     res
 }
 
-pub fn emit_olsak(puzzle: &Puzzle) -> String {
+pub fn as_olsak(puzzle: &Puzzle) -> String {
     let mut res = String::new();
     res.push_str("#d\n");
 
@@ -91,4 +95,24 @@ pub fn emit_olsak(puzzle: &Puzzle) -> String {
     }
 
     res
+}
+
+pub fn emit_image<P>(solution: &Solution, path: P) -> anyhow::Result<()>
+where
+    P: AsRef<Path>,
+{
+    let mut image = RgbImage::new(
+        solution.grid.len() as u32,
+        solution.grid.first().unwrap().len() as u32,
+    );
+
+    for (x, col) in solution.grid.iter().enumerate() {
+        for (y, color) in col.iter().enumerate() {
+            let color_info = &solution.palette[color];
+            let (r, g, b) = color_info.rgb;
+            image.put_pixel(x as u32, y as u32, Rgb::<u8>([r, g, b]));
+        }
+    }
+
+    Ok(image.save(path)?)
 }

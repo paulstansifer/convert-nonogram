@@ -128,11 +128,19 @@ pub fn char_grid_to_solution(char_grid: &str) -> Solution {
     unused_colors.insert('c', (0, 255, 255));
     unused_colors.insert('m', (255, 0, 255));
 
-    for i in (1 as u8)..(9 as u8) {
-        unused_colors.insert(from_digit(i.into(), 10).unwrap(), (22 * i, 22 * i, 22 * i));
-    }
-
     for ch in unused_chars {
+        if unused_colors.is_empty() {
+            for i in (1 as u8)..(5 as u8) {
+                unused_colors.insert(from_digit(i.into(), 10).unwrap(), (44 * i, 44 * i, 44 * i));
+            }
+            unused_colors.insert('R', (127, 0, 0));
+            unused_colors.insert('G', (0, 127, 0));
+            unused_colors.insert('B', (0, 0, 127));
+
+            unused_colors.insert('Y', (127, 127, 0));
+            unused_colors.insert('C', (0, 127, 127));
+            unused_colors.insert('M', (127, 0, 127));
+        }
         let rgb = unused_colors
             .remove(&ch)
             .unwrap_or_else(|| unused_colors.pop_first().unwrap().1);
@@ -176,7 +184,7 @@ pub fn char_grid_to_solution(char_grid: &str) -> Solution {
     }
 }
 
-pub fn solution_to_puzzle(solution: Solution) -> Puzzle {
+pub fn solution_to_puzzle(solution: &Solution) -> Puzzle {
     let width = solution.grid.len();
     let height = solution.grid.first().unwrap().len();
 
@@ -302,7 +310,7 @@ pub fn solution_to_puzzle(solution: Solution) -> Puzzle {
     }
 
     Puzzle {
-        palette: solution.palette,
+        palette: solution.palette.clone(),
         rows,
         cols,
     }
