@@ -210,6 +210,7 @@ fn packed_extents(clues: &[Clue], lane: &ArrayViewMut1<Cell>, reversed: bool) ->
         while !placeable {
             placeable = true;
             for possible_pos in (pos..(pos + clue.count as usize)).rev() {
+                // TODO: `possible_pos` can get too high if clues are contradictory; use `Result`
                 let cur = lane_at(possible_pos);
 
                 if cur.is_some() && cur != Some(clue.color) {
@@ -301,6 +302,8 @@ pub fn skim_line(clues: &[Clue], mut lane: ArrayViewMut1<Cell>) -> anyhow::Resul
             learn_cell(clue.color, &mut lane, idx, &mut affected).context("overlap")?
         }
 
+        // TODO: this seems to still be necessary, despite the background inference below!
+        // Figure out why.
         if (*right_extent as i16 - *left_extent as i16) + 1 == clue.count as i16 {
             if gap_before {
                 learn_cell(BACKGROUND, &mut lane, left_extent - 1, &mut affected).context("gb")?
@@ -308,6 +311,29 @@ pub fn skim_line(clues: &[Clue], mut lane: ArrayViewMut1<Cell>) -> anyhow::Resul
             if gap_after {
                 learn_cell(BACKGROUND, &mut lane, right_extent + 1, &mut affected).context("ga")?
             }
+        }
+    }
+
+    // TODO: `packed_extents` should just return both extents of each block.
+    let right_packed_right_extents = right_packed_left_extents
+        .iter()
+        .zip(clues.iter())
+        .map(|(extent, clue)| extent + clue.count as usize - 1);
+    let left_packed_left_extents = left_packed_right_extents
+        .iter()
+        .zip(clues.iter())
+        .map(|(extent, clue)| extent + 1 - clue.count as usize);
+
+    // Similarly, are there squares between adjacent blocks that can't be hit (must be background)?
+    // I learned you can do this from `pbnsolve`.
+    for (right_extent_prev, left_extent) in
+        right_packed_right_extents.zip(left_packed_left_extents.skip(1))
+    {
+        if left_extent == 0 {
+            continue;
+        }
+        for idx in (right_extent_prev + 1)..=(left_extent - 1) {
+            learn_cell(BACKGROUND, &mut lane, idx, &mut affected).context("empty between")?
         }
     }
 

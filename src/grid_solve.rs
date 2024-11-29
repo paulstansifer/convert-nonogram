@@ -1,4 +1,5 @@
 use anyhow::bail;
+use colored::Colorize;
 use ndarray::{ArrayView1, ArrayViewMut1};
 
 use crate::{
@@ -123,7 +124,62 @@ fn print_grid(grid: &Grid, puzzle: &Puzzle) {
     }
 }
 
-pub fn solve(puzzle: &Puzzle) -> anyhow::Result<Report> {
+fn display_step<'a>(
+    clue_lane: &'a LaneState<'a>,
+    orig_lane: Vec<Option<Color>>,
+    scrub: bool,
+    grid: &'a Grid,
+    puzzle: &'a Puzzle,
+) {
+    use std::fmt::Write;
+    let mut clues = String::new();
+
+    for clue in clue_lane.clues {
+        write!(clues, "{}{} ", clue.count, puzzle.palette[&clue.color].ch).unwrap();
+    }
+
+    let r_or_c = if clue_lane.row { "R" } else { "C" };
+
+    print!("{}{: <3} {: >16}", r_or_c, clue_lane.index, clues);
+
+    if scrub {
+        print!(" ! ");
+    } else {
+        print!(" | ");
+    }
+
+    for (orig, now) in orig_lane.iter().zip(get_grid_lane(&clue_lane, grid)) {
+        let new_ch = match now {
+            None => "?".to_string(),
+            Some(known_color) => puzzle.palette[&known_color].ch.to_string(),
+        };
+
+        if *orig != *now {
+            print!("{}", new_ch.underline());
+        } else {
+            print!("{}", new_ch);
+        }
+    }
+
+    // Hackish way of getting the original score...
+    if scrub {
+        let lane_arr: ndarray::Array1<Option<Color>> = orig_lane.into();
+        let orig_score = scrub_heuristic(
+            &clue_lane.clues,
+            lane_arr.rows().into_iter().next().unwrap(),
+        );
+        println!("   {}->{}", orig_score, clue_lane.scrub_score);
+    } else {
+        let lane_arr: ndarray::Array1<Option<Color>> = orig_lane.into();
+        let orig_score = skim_heuristic(
+            &clue_lane.clues,
+            lane_arr.rows().into_iter().next().unwrap(),
+        );
+        println!("   {}->{}", orig_score, clue_lane.skim_score);
+    }
+}
+
+pub fn solve(puzzle: &Puzzle, trace_solve: bool) -> anyhow::Result<Report> {
     let mut grid = Grid::default((puzzle.rows.len(), puzzle.cols.len()));
 
     let mut solve_lanes = vec![];
@@ -160,13 +216,7 @@ pub fn solve(puzzle: &Puzzle) -> anyhow::Result<Report> {
             };
 
             let best_grid_lane = get_mut_grid_lane(&best_clue_lane, &mut grid);
-
-            print!(
-                "({}){}{}",
-                best_clue_lane.effective_score(will_scrub),
-                best_clue_lane.index,
-                if best_clue_lane.row { "R" } else { "C" }
-            );
+            let orig_version_of_line: Vec<Option<Color>> = best_grid_lane.iter().cloned().collect();
 
             let report = if will_scrub {
                 best_clue_lane.scrubbed = true;
@@ -180,14 +230,18 @@ pub fn solve(puzzle: &Puzzle) -> anyhow::Result<Report> {
 
             best_clue_lane.rescore(&grid, /*was_processed=*/ true);
 
+            if trace_solve {
+                display_step(
+                    &best_clue_lane,
+                    orig_version_of_line,
+                    will_scrub,
+                    &grid,
+                    puzzle,
+                );
+            }
+
             (report, best_clue_lane.row)
         };
-
-        print!(
-            "{}{} ",
-            report.affected_cells.len(),
-            if will_scrub { "!" } else { "" }
-        );
 
         cells_left -= report.affected_cells.len();
         if cells_left == 0 {
@@ -208,6 +262,7 @@ pub fn solve(puzzle: &Puzzle) -> anyhow::Result<Report> {
             }
         }
 
+        // Affected intersecting lanes now may need to be re-examined:
         for other_lane in solve_lanes.iter_mut() {
             if other_lane.row != was_row && report.affected_cells.contains(&other_lane.index) {
                 other_lane.rescore(&grid, /*was_processed=*/ false);

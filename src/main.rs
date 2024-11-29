@@ -13,15 +13,16 @@ use clap::Parser;
 #[derive(Clone, Copy, Debug, clap::ValueEnum, Default, PartialEq, Eq)]
 enum NonogramFormat {
     #[default]
-    /// Any image supported by the `image` crate (when used as output, defaults to `.png`)
+    /// Any image supported by the `image` crate (when used as output, infers format from
+    /// extension).
     Image,
-    /// A grid of characters. Some characters have default colors associated with them;
-    /// others are chosen arbitrarily.
-    CharGrid,
-    /// The format used by the 'olsak' solver.
-    Olsak,
     /// The widely-used format associated with http://webpbn.com.
     Webpbn,
+    /// The format used by the 'olsak' solver.
+    Olsak,
+    /// A grid of characters. Attempts some sensible matching of characters to colors, but results
+    /// will vary.
+    CharGrid,
 }
 
 #[derive(clap::Parser, Debug)]
@@ -41,6 +42,10 @@ struct Args {
     /// Format to emit as output
     #[arg(short, long, value_enum, default_value_t)]
     output_format: NonogramFormat,
+
+    /// Explain the solve process line-by-line.
+    #[arg(short, long, action = clap::ArgAction::SetTrue)]
+    trace_solve: bool,
 }
 
 fn main() -> std::io::Result<()> {
@@ -94,7 +99,7 @@ fn main() -> std::io::Result<()> {
         }
 
         None => {
-            grid_solve::solve(&puzzle).unwrap();
+            grid_solve::solve(&puzzle, args.trace_solve).unwrap();
         }
     }
 

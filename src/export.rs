@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use image::{DynamicImage, GenericImage, Rgb, RgbImage};
+use image::{Rgb, RgbImage};
 
 use crate::puzzle::{Puzzle, Solution};
 

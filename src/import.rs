@@ -75,12 +75,14 @@ pub fn char_grid_to_solution(char_grid: &str) -> Solution {
 
     let mut bg_ch: Option<char> = None;
 
+    // Look for a character that seems to represent a white background.
     for possible_bg in [' ', '.', '_', 'w', 'W', '·', '☐', '0'] {
         if unused_chars.contains(&possible_bg) {
             bg_ch = Some(possible_bg);
         }
     }
 
+    // But we need to *some* color as background to proceed!
     let bg_ch = match bg_ch {
         Some(x) => x,
         None => {
@@ -102,6 +104,7 @@ pub fn char_grid_to_solution(char_grid: &str) -> Solution {
 
     let mut next_color: u8 = 1;
 
+    // Look for a character that might be black (but it's not required to exist).
     for possible_black in ['#', 'B', 'b', '.', '■', '█', '1'] {
         if unused_chars.contains(&possible_black) {
             palette.insert(
@@ -119,6 +122,7 @@ pub fn char_grid_to_solution(char_grid: &str) -> Solution {
         }
     }
 
+    // By default, use primary and secondary colors:
     let mut unused_colors = BTreeMap::<char, (u8, u8, u8)>::new();
     unused_colors.insert('r', (255, 0, 0));
     unused_colors.insert('g', (0, 255, 0));
@@ -130,6 +134,7 @@ pub fn char_grid_to_solution(char_grid: &str) -> Solution {
 
     for ch in unused_chars {
         if unused_colors.is_empty() {
+            // If desperate, use grays and dark colors:
             for i in (1 as u8)..(5 as u8) {
                 unused_colors.insert(from_digit(i.into(), 10).unwrap(), (44 * i, 44 * i, 44 * i));
             }
@@ -182,6 +187,10 @@ pub fn char_grid_to_solution(char_grid: &str) -> Solution {
             .collect(),
         grid,
     }
+}
+
+pub fn webpbn_to_puzzle(webpbn: &str) -> Puzzle {
+    todo!()
 }
 
 pub fn solution_to_puzzle(solution: &Solution) -> Puzzle {
