@@ -3,11 +3,10 @@ use colored::Colorize;
 use ndarray::{ArrayView1, ArrayViewMut1};
 
 use crate::{
-    line_solve::{scrub_heuristic, scrub_line, skim_heuristic, skim_line},
-    puzzle::{Clue, Color, Puzzle},
+    line_solve::{scrub_heuristic, scrub_line, skim_heuristic, skim_line, Cell},
+    puzzle::{Clue, Puzzle},
 };
 
-type Cell = Option<Color>;
 type Grid = ndarray::Array2<Cell>;
 
 pub struct Report {}
@@ -42,7 +41,7 @@ impl<'a> LaneState<'a> {
     }
     fn rescore(&mut self, grid: &Grid, was_processed: bool) {
         let lane = get_grid_lane(self, grid);
-        if lane.iter().all(|cell| cell.is_some()) {
+        if lane.iter().all(|cell| cell.is_known()) {
             self.scrub_score = std::i32::MIN;
             self.skim_score = std::i32::MIN;
             return;
@@ -111,12 +110,12 @@ fn find_best_lane<'a, 'b>(
 fn print_grid(grid: &Grid, puzzle: &Puzzle) {
     for row in grid.rows() {
         for cell in row {
-            match cell {
+            match cell.known_or() {
                 None => {
                     print!("?");
                 }
                 Some(c) => {
-                    print!("{}", puzzle.palette[c].ch);
+                    print!("{}", puzzle.palette[&c].ch);
                 }
             }
         }
@@ -126,7 +125,7 @@ fn print_grid(grid: &Grid, puzzle: &Puzzle) {
 
 fn display_step<'a>(
     clue_lane: &'a LaneState<'a>,
-    orig_lane: Vec<Option<Color>>,
+    orig_lane: Vec<Cell>,
     scrub: bool,
     grid: &'a Grid,
     puzzle: &'a Puzzle,
@@ -149,7 +148,7 @@ fn display_step<'a>(
     }
 
     for (orig, now) in orig_lane.iter().zip(get_grid_lane(&clue_lane, grid)) {
-        let new_ch = match now {
+        let new_ch = match now.known_or() {
             None => "?".to_string(),
             Some(known_color) => puzzle.palette[&known_color].ch.to_string(),
         };
@@ -163,14 +162,14 @@ fn display_step<'a>(
 
     // Hackish way of getting the original score...
     if scrub {
-        let lane_arr: ndarray::Array1<Option<Color>> = orig_lane.into();
+        let lane_arr: ndarray::Array1<Cell> = orig_lane.into();
         let orig_score = scrub_heuristic(
             &clue_lane.clues,
             lane_arr.rows().into_iter().next().unwrap(),
         );
         println!("   {}->{}", orig_score, clue_lane.scrub_score);
     } else {
-        let lane_arr: ndarray::Array1<Option<Color>> = orig_lane.into();
+        let lane_arr: ndarray::Array1<Cell> = orig_lane.into();
         let orig_score = skim_heuristic(
             &clue_lane.clues,
             lane_arr.rows().into_iter().next().unwrap(),
@@ -180,7 +179,7 @@ fn display_step<'a>(
 }
 
 pub fn solve(puzzle: &Puzzle, trace_solve: bool) -> anyhow::Result<Report> {
-    let mut grid = Grid::default((puzzle.rows.len(), puzzle.cols.len()));
+    let mut grid = Grid::from_elem((puzzle.rows.len(), puzzle.cols.len()), Cell::new(puzzle));
 
     let mut solve_lanes = vec![];
 
@@ -206,7 +205,7 @@ pub fn solve(puzzle: &Puzzle, trace_solve: bool) -> anyhow::Result<Report> {
                 None => {
                     if will_scrub {
                         print_grid(&grid, puzzle);
-                        bail!("Cannot solve");
+                        bail!("Cannot solve: {} cells left", cells_left);
                     } else {
                         print!("=>!! ");
                         allowed_skims = 0; // Try again, but scrub.
@@ -216,7 +215,7 @@ pub fn solve(puzzle: &Puzzle, trace_solve: bool) -> anyhow::Result<Report> {
             };
 
             let best_grid_lane = get_mut_grid_lane(&best_clue_lane, &mut grid);
-            let orig_version_of_line: Vec<Option<Color>> = best_grid_lane.iter().cloned().collect();
+            let orig_version_of_line: Vec<Cell> = best_grid_lane.iter().cloned().collect();
 
             let report = if will_scrub {
                 best_clue_lane.scrubbed = true;
@@ -229,6 +228,16 @@ pub fn solve(puzzle: &Puzzle, trace_solve: bool) -> anyhow::Result<Report> {
             };
 
             best_clue_lane.rescore(&grid, /*was_processed=*/ true);
+
+            // TODO: there's got to be a simpler way than calling `get_mut_grid_lane` again.
+            // Maybe just have `skim`/`scrub` report the difference directly
+            let known_before = orig_version_of_line.iter().filter(|c| c.is_known()).count();
+            let known_after = get_mut_grid_lane(&best_clue_lane, &mut grid)
+                .iter()
+                .filter(|c| c.is_known())
+                .count();
+
+            cells_left -= known_after - known_before;
 
             if trace_solve {
                 display_step(
@@ -243,7 +252,6 @@ pub fn solve(puzzle: &Puzzle, trace_solve: bool) -> anyhow::Result<Report> {
             (report, best_clue_lane.row)
         };
 
-        cells_left -= report.affected_cells.len();
         if cells_left == 0 {
             println!();
             println!("Solved in {skims} skims, {scrubs} scrubs.");

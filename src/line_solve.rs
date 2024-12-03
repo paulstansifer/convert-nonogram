@@ -1,14 +1,121 @@
 // They're used in tests, but it can't see that.
 #![allow(unused_macros)]
 
-use crate::puzzle::{Clue, Color, BACKGROUND};
+use std::u32;
+
+use crate::puzzle::{Clue, Color, Puzzle, BACKGROUND};
 use anyhow::{bail, Context};
 use ndarray::{ArrayView1, ArrayViewMut1};
 
 // type ClueSlice = Vec<Clue>;
 
-// None is "I don't know yet"
-type Cell = Option<Color>;
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Cell {
+    possible_color_mask: u32,
+}
+
+impl Cell {
+    pub fn new(puzzle: &Puzzle) -> Cell {
+        let mut res: u32 = 0;
+        for color in puzzle.palette.keys() {
+            res |= 1 << color.0
+        }
+        Cell {
+            possible_color_mask: res,
+        }
+    }
+
+    /// Not much practical difference between this and `new`.
+    pub fn new_anything() -> Cell {
+        Cell {
+            possible_color_mask: u32::MAX,
+        }
+    }
+
+    pub fn from_colors(colors: &[Color]) -> Cell {
+        let mut res = Self::new_impossible();
+        for c in colors {
+            res.actually_could_be(*c);
+        }
+        res
+    }
+
+    pub fn from_color(color: Color) -> Cell {
+        Cell {
+            possible_color_mask: 1 << color.0,
+        }
+    }
+
+    pub fn is_known(&self) -> bool {
+        self.possible_color_mask.is_power_of_two()
+    }
+
+    pub fn is_known_to_be(&self, color: Color) -> bool {
+        self.possible_color_mask == 1 << color.0
+    }
+
+    pub fn can_be(&self, color: Color) -> bool {
+        (self.possible_color_mask & 1 << color.0) != 0
+    }
+
+    pub fn known_or(&self) -> Option<Color> {
+        if !self.is_known() {
+            None
+        } else {
+            Some(Color(self.possible_color_mask.ilog2() as u8))
+        }
+    }
+
+    /// Returns whether anything new was discovered (or an error if it's impossible)
+    pub fn learn(&mut self, color: Color) -> anyhow::Result<bool> {
+        if !self.can_be(color) {
+            bail!("learned a contradiction");
+        }
+        let already_known = self.is_known();
+        self.possible_color_mask = 1 << color.0;
+        Ok(!already_known)
+    }
+
+    pub fn learn_intersect(&mut self, possible: Cell) -> anyhow::Result<bool> {
+        if self.possible_color_mask & possible.possible_color_mask == 0 {
+            bail!("learned a contradiction");
+        }
+        let orig_mask = self.possible_color_mask;
+        self.possible_color_mask &= possible.possible_color_mask;
+
+        Ok(self.possible_color_mask != orig_mask)
+    }
+
+    /// Returns whether anything new was discovered (or an error if it's impossible)
+    pub fn learn_that_not(&mut self, color: Color) -> anyhow::Result<bool> {
+        if self.is_known_to_be(color) {
+            bail!("learned a contradiction");
+        }
+        let already_known = !self.can_be(color);
+        self.possible_color_mask &= !(1 << color.0);
+        Ok(!already_known)
+    }
+
+    /// Doesn't make sense in the grid, but useful for scrubbing.
+    pub fn new_impossible() -> Cell {
+        Cell {
+            possible_color_mask: 0,
+        }
+    }
+
+    /// Doesn't make sense in the grid, but useful for scrubbing.
+    pub fn actually_could_be(&mut self, color: Color) {
+        self.possible_color_mask |= 1 << color.0;
+    }
+
+    pub fn contradictory(&self) -> bool {
+        self.possible_color_mask == 0
+    }
+
+    pub fn unwrap_color(&self) -> Color {
+        self.known_or().unwrap()
+    }
+}
 
 struct Arrangement<'a> {
     cs: &'a [Clue],
@@ -139,11 +246,20 @@ fn learn_cell(
     idx: usize,
     affected_cells: &mut Vec<usize>,
 ) -> anyhow::Result<()> {
-    if lane[idx].is_none() {
-        lane[idx] = Some(color);
+    if lane[idx].learn(color)? {
         affected_cells.push(idx);
-    } else if lane[idx] != Some(color) {
-        bail!("Learned a contradiction");
+    }
+    Ok(())
+}
+
+fn learn_cell_intersect(
+    possibilities: Cell,
+    lane: &mut ArrayViewMut1<Cell>,
+    idx: usize,
+    affected_cells: &mut Vec<usize>,
+) -> anyhow::Result<()> {
+    if lane[idx].learn_intersect(possibilities)? {
+        affected_cells.push(idx);
     }
     Ok(())
 }
@@ -181,7 +297,7 @@ impl<'a> Iterator for ClueAdjIterator<'a> {
 fn packed_extents(clues: &[Clue], lane: &ArrayViewMut1<Cell>, reversed: bool) -> Vec<usize> {
     let mut extents: Vec<usize> = vec![];
 
-    let lane_at = |idx: usize| -> Option<Color> {
+    let lane_at = |idx: usize| -> Cell {
         if reversed {
             lane[lane.len() - 1 - idx]
         } else {
@@ -213,7 +329,7 @@ fn packed_extents(clues: &[Clue], lane: &ArrayViewMut1<Cell>, reversed: bool) ->
                 // TODO: `possible_pos` can get too high if clues are contradictory; use `Result`
                 let cur = lane_at(possible_pos);
 
-                if cur.is_some() && cur != Some(clue.color) {
+                if !cur.can_be(clue.color) {
                     pos = possible_pos + 1;
                     placeable = false;
                     break;
@@ -233,7 +349,7 @@ fn packed_extents(clues: &[Clue], lane: &ArrayViewMut1<Cell>, reversed: bool) ->
     let mut cur_extent_idx = extents.len() - 1;
     let mut i = lane.len() - 1;
     loop {
-        if lane_at(i).is_some() && lane_at(i) != Some(BACKGROUND) {
+        if !lane_at(i).can_be(BACKGROUND) {
             // We don't check that the affected clue and the cell have the same color!
             // That's okay for this conservative approximation, but also kinda silly.
 
@@ -361,7 +477,7 @@ pub fn skim_heuristic(clues: &[Clue], lane: ArrayView1<Cell>) -> i32 {
     let mut cur_foregroundable_span = 0;
 
     for cell in lane {
-        if cell != &Some(BACKGROUND) {
+        if !cell.is_known_to_be(BACKGROUND) {
             cur_foregroundable_span += 1;
             longest_foregroundable_span =
                 std::cmp::max(cur_foregroundable_span, longest_foregroundable_span);
@@ -374,78 +490,73 @@ pub fn skim_heuristic(clues: &[Clue], lane: ArrayView1<Cell>) -> i32 {
 
     let longest_clue = clues.iter().map(|c| c.count).max().unwrap();
 
-    let edge_bonus =
-        if lane.first().unwrap().is_some() && lane.first().unwrap() != &Some(BACKGROUND) {
-            2
-        } else {
-            0
-        } + if lane.last().unwrap().is_some() && lane.last().unwrap() != &Some(BACKGROUND) {
-            2
-        } else {
-            0
-        };
+    let edge_bonus = if !lane.first().unwrap().is_known_to_be(BACKGROUND) {
+        2
+    } else {
+        0
+    } + if !lane.last().unwrap().is_known_to_be(BACKGROUND) {
+        2
+    } else {
+        0
+    };
 
     (total_clue_length + longest_clue) as i32 - longest_foregroundable_span + edge_bonus
 }
 
 pub fn scrub_line(cs: &[Clue], mut lane: ArrayViewMut1<Cell>) -> anyhow::Result<ScrubReport> {
-    let mut scratch_lane: Vec<Cell> = vec![]; // empty for "haven't found a valid arrangement yet"
+    let mut possibilities_lane: Vec<Cell> = vec![Cell::new_impossible(); lane.len()];
 
     let dimension = lane.len() as u16;
 
     let bg_sq = bg_squares(cs, dimension);
 
+    let mut found_something = false;
     for gaps in PossibleArrangements::new(cs.len() as u16, bg_sq) {
-        let mut contradiction = false;
+        let mut arrangement_impossible = false;
         for i in 1..cs.len() {
             if cs[i - 1].color == cs[i].color && gaps[i] == 0 {
                 // Adjacent blocks of the same color need at least one space of separation
-                contradiction = true;
+                arrangement_impossible = true;
             }
         }
-        if contradiction {
+        if arrangement_impossible {
             continue;
         }
 
         for (this_color, known_color) in Arrangement::new(cs, &gaps, dimension).zip(lane.iter()) {
-            if let Some(known_color) = known_color {
-                if *known_color != this_color {
-                    contradiction = true;
-                }
+            if !known_color.can_be(this_color) {
+                arrangement_impossible = true;
             }
         }
-        if contradiction {
+        if arrangement_impossible {
             continue;
         }
 
-        if scratch_lane.is_empty() {
-            // Initialize with the first possible arrangement.
-            scratch_lane = Arrangement::new(cs, &gaps, dimension).map(Some).collect();
-        } else {
-            for (scratch_color, this_color) in scratch_lane
-                .iter_mut()
-                .zip(Arrangement::new(cs, &gaps, dimension))
-            {
-                // We've seen a possible difference; we don't know anything about this cell.
-                if *scratch_color != Some(this_color) {
-                    *scratch_color = None;
-                }
-            }
+        found_something = true;
+
+        for (possibility_color, this_color) in possibilities_lane
+            .iter_mut()
+            .zip(Arrangement::new(cs, &gaps, dimension))
+        {
+            possibility_color.actually_could_be(this_color);
         }
     }
 
-    if scratch_lane.is_empty() {
-        bail!("Clues are not consistent with what we already know!");
+    if !found_something {
+        bail!("No possible arrangements found.")
     }
 
     let mut res = ScrubReport {
         affected_cells: vec![],
     };
 
-    for (idx, new_knowledge) in scratch_lane.iter().enumerate() {
-        if let Some(color) = new_knowledge {
-            learn_cell(*color, &mut lane, idx, &mut res.affected_cells).expect("scrubbing error")
+    for (idx, possible_colors) in possibilities_lane.iter().enumerate() {
+        if possible_colors.contradictory() {
+            bail!("Scrubbing found no arrangements")
         }
+
+        learn_cell_intersect(*possible_colors, &mut lane, idx, &mut res.affected_cells)
+            .expect("scrubbing error")
     }
 
     Ok(res)
@@ -472,10 +583,10 @@ pub fn scrub_heuristic(clues: &[Clue], lane: ArrayView1<Cell>) -> i32 {
 
     let known_background_cells = lane
         .into_iter()
-        .filter(|cell| **cell == Some(BACKGROUND))
+        .filter(|cell| cell.is_known_to_be(BACKGROUND))
         .count() as i32;
 
-    let unknown_cells = lane.into_iter().filter(|cell| cell.is_none()).count() as i32;
+    let unknown_cells = lane.into_iter().filter(|cell| !cell.is_known()).count() as i32;
 
     let known_foreground_cells = lane.len() as i32 - unknown_cells - known_background_cells;
 
@@ -485,7 +596,7 @@ pub fn scrub_heuristic(clues: &[Clue], lane: ArrayView1<Cell>) -> i32 {
     let mut known_foreground_chunks: i32 = 0;
     let mut in_a_foreground_chunk = false;
     for cell in lane {
-        if cell.is_some() && *cell != Some(BACKGROUND) {
+        if !cell.can_be(BACKGROUND) {
             if !in_a_foreground_chunk {
                 known_foreground_chunks += 1;
             }
@@ -560,14 +671,14 @@ fn arrange_gaps_test() {
     }
 }
 
-// Uses `Option<Color>` everywhere, even in the clues, for simplicity, even though `None` is
-// invalid there.
+// Uses `Cell` everywhere, even in the clues, for simplicity, even though clues have to be one
+// specific_color
 macro_rules! t_scrub {
     ([$($color:expr, $count:expr);*] $($state:expr),*) => {
         {
             let mut initial = ndarray::arr1(&[ $($state),* ]);
             scrub_line(
-                &vec![ $( Clue { color: $color.unwrap(), count: $count} ),* ],
+                &vec![ $( Clue { color: $color.unwrap_color(), count: $count} ),* ],
                 initial.rows_mut().into_iter().next().unwrap())
                     .expect("impossible!");
             initial
@@ -580,7 +691,7 @@ macro_rules! t_skim {
         {
             let mut initial = ndarray::arr1(&[ $($state),* ]);
             skim_line(
-                &vec![ $( Clue { color: $color.unwrap(), count: $count} ),* ],
+                &vec![ $( Clue { color: $color.unwrap_color(), count: $count} ),* ],
                 initial.rows_mut().into_iter().next().unwrap())
                     .expect("impossible!");
             initial
@@ -596,41 +707,48 @@ macro_rules! t_line {
 
 #[test]
 fn scrub_test() {
-    let x = None;
-    let w = Some(Color(0));
-    let b = Some(Color(1));
-    let r = Some(Color(2));
+    let bw = Cell::from_colors(&[BACKGROUND, Color(1)]);
+    let w = Cell::from_color(Color(0));
+    let b = Cell::from_color(Color(1));
 
-    assert_eq!(t_scrub!([b, 1]  x, x, x, x), t_line!(x, x, x, x));
+    assert_eq!(t_scrub!([b, 1]  bw, bw, bw, bw), t_line!(bw, bw, bw, bw));
 
-    assert_eq!(t_scrub!([b, 1]  w, x, x, x), t_line!(w, x, x, x));
+    assert_eq!(t_scrub!([b, 1]  w, bw, bw, bw), t_line!(w, bw, bw, bw));
 
-    assert_eq!(t_scrub!([b, 1; b, 2]  x, x, x, x), t_line!(b, w, b, b));
+    assert_eq!(t_scrub!([b, 1; b, 2]  bw, bw, bw, bw), t_line!(b, w, b, b));
 
-    assert_eq!(t_scrub!([b, 1]  x, x, b, x), t_line!(w, w, b, w));
+    assert_eq!(t_scrub!([b, 1]  bw, bw, b, bw), t_line!(w, w, b, w));
 
-    assert_eq!(t_scrub!([b, 3]  x, x, x, x), t_line!(x, b, b, x));
-
-    assert_eq!(t_scrub!([b, 3]  x, b, x, x, x), t_line!(x, b, b, x, w));
+    assert_eq!(t_scrub!([b, 3]  bw, bw, bw, bw), t_line!(bw, b, b, bw));
 
     assert_eq!(
-        t_scrub!([b, 2; b, 2]  x, x, x, x, x),
+        t_scrub!([b, 3]  bw, b, bw, bw, bw),
+        t_line!(bw, b, b, bw, w)
+    );
+
+    assert_eq!(
+        t_scrub!([b, 2; b, 2]  bw, bw, bw, bw, bw),
         t_line!(b, b, w, b, b)
     );
 
+    let rbw = Cell::from_colors(&[BACKGROUND, Color(1), Color(2)]);
+    let r = Cell::from_color(Color(2));
+    let rw = Cell::from_colors(&[BACKGROUND, Color(2)]);
+    let bw = Cell::from_colors(&[BACKGROUND, Color(1)]);
+
     // Different colors don't need separation, so we don't know as much:
     assert_eq!(
-        t_scrub!([r, 2; b, 2]  x, x, x, x, x),
-        t_line!(x, r, x, b, x)
+        t_scrub!([r, 2; b, 2]  rbw, rbw, rbw, rbw, rbw),
+        t_line!(rw, r, rbw, b, bw)
     );
 }
 
 #[test]
 fn skim_test() {
-    let x = None;
-    let w = Some(Color(0));
-    let b = Some(Color(1));
-    let r = Some(Color(2));
+    let x = Cell::new_anything();
+    let w = Cell::from_color(Color(0));
+    let b = Cell::from_color(Color(1));
+    let r = Cell::from_color(Color(2));
 
     assert_eq!(t_skim!([b, 1]  x, x, x, x), t_line!(x, x, x, x));
 
@@ -662,7 +780,7 @@ macro_rules! t_heur {
         {
             let initial = ndarray::arr1(&[ $($state),* ]);
             scrub_heuristic(
-                &vec![ $( Clue { color: $color.unwrap(), count: $count} ),* ],
+                &vec![ $( Clue { color: $color.unwrap_color(), count: $count} ),* ],
                 initial.rows().into_iter().next().unwrap())
         }
     };
@@ -670,9 +788,9 @@ macro_rules! t_heur {
 
 #[test]
 fn heuristic_examples() {
-    let x = None;
-    let w = Some(Color(0));
-    let b = Some(Color(1));
+    let x = Cell::new_anything();
+    let w = Cell::from_color(Color(0));
+    let b = Cell::from_color(Color(1));
 
     assert_eq!(t_heur!([b, 1]  x, x, x, x), 1);
     assert_eq!(t_heur!([b, 1]  w, x, x, x), 1);
