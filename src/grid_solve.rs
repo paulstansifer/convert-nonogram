@@ -147,7 +147,7 @@ fn display_step<'a>(
         print!(" | ");
     }
 
-    for (orig, now) in orig_lane.iter().zip(get_grid_lane(&clue_lane, grid)) {
+    for (orig, now) in orig_lane.iter().zip(get_grid_lane(clue_lane, grid)) {
         let new_ch = match now.known_or() {
             None => "?".to_string(),
             Some(known_color) => puzzle.palette[&known_color].ch.to_string(),
@@ -164,14 +164,14 @@ fn display_step<'a>(
     if scrub {
         let lane_arr: ndarray::Array1<Cell> = orig_lane.into();
         let orig_score = scrub_heuristic(
-            &clue_lane.clues,
+            clue_lane.clues,
             lane_arr.rows().into_iter().next().unwrap(),
         );
         println!("   {}->{}", orig_score, clue_lane.scrub_score);
     } else {
         let lane_arr: ndarray::Array1<Cell> = orig_lane.into();
         let orig_score = skim_heuristic(
-            &clue_lane.clues,
+            clue_lane.clues,
             lane_arr.rows().into_iter().next().unwrap(),
         );
         println!("   {}->{}", orig_score, clue_lane.skim_score);
@@ -214,7 +214,7 @@ pub fn solve(puzzle: &Puzzle, trace_solve: bool) -> anyhow::Result<Report> {
                 }
             };
 
-            let best_grid_lane = get_mut_grid_lane(&best_clue_lane, &mut grid);
+            let best_grid_lane = get_mut_grid_lane(best_clue_lane, &mut grid);
             let orig_version_of_line: Vec<Cell> = best_grid_lane.iter().cloned().collect();
 
             let report = if will_scrub {
@@ -232,7 +232,7 @@ pub fn solve(puzzle: &Puzzle, trace_solve: bool) -> anyhow::Result<Report> {
             // TODO: there's got to be a simpler way than calling `get_mut_grid_lane` again.
             // Maybe just have `skim`/`scrub` report the difference directly
             let known_before = orig_version_of_line.iter().filter(|c| c.is_known()).count();
-            let known_after = get_mut_grid_lane(&best_clue_lane, &mut grid)
+            let known_after = get_mut_grid_lane(best_clue_lane, &mut grid)
                 .iter()
                 .filter(|c| c.is_known())
                 .count();
@@ -241,7 +241,7 @@ pub fn solve(puzzle: &Puzzle, trace_solve: bool) -> anyhow::Result<Report> {
 
             if trace_solve {
                 display_step(
-                    &best_clue_lane,
+                    best_clue_lane,
                     orig_version_of_line,
                     will_scrub,
                     &grid,
@@ -262,12 +262,10 @@ pub fn solve(puzzle: &Puzzle, trace_solve: bool) -> anyhow::Result<Report> {
             if !report.affected_cells.is_empty() {
                 allowed_skims = 6;
             }
+        } else if report.affected_cells.is_empty() {
+            allowed_skims -= 1;
         } else {
-            if report.affected_cells.is_empty() {
-                allowed_skims -= 1;
-            } else {
-                allowed_skims = std::cmp::max(10, allowed_skims + 1);
-            }
+            allowed_skims = std::cmp::max(10, allowed_skims + 1);
         }
 
         // Affected intersecting lanes now may need to be re-examined:

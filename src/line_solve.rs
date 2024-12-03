@@ -189,7 +189,7 @@ impl PossibleArrangements {
     fn new(len: u16, max_sum: u16) -> PossibleArrangements {
         PossibleArrangements {
             gaps: vec![0; len as usize],
-            max_sum: max_sum,
+            max_sum,
             first_step: true,
         }
     }
@@ -270,7 +270,7 @@ struct ClueAdjIterator<'a> {
 }
 impl<'a> ClueAdjIterator<'a> {
     fn new(clues: &'a [Clue]) -> ClueAdjIterator<'a> {
-        ClueAdjIterator { clues: clues, i: 0 }
+        ClueAdjIterator { clues, i: 0 }
     }
 }
 
@@ -314,7 +314,7 @@ fn packed_extents(clues: &[Clue], lane: &ArrayViewMut1<Cell>, reversed: bool) ->
 
     // -- Pack to the left (we've abstracted over `reversed`) --
 
-    let mut pos = 0 as usize;
+    let mut pos = 0_usize;
     let mut last_color = None;
     for clue_idx in 0..clues.len() {
         let clue = clue_at(clue_idx);

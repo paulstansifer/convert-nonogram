@@ -135,7 +135,7 @@ pub fn char_grid_to_solution(char_grid: &str) -> Solution {
     for ch in unused_chars {
         if unused_colors.is_empty() {
             // If desperate, use grays and dark colors:
-            for i in (1 as u8)..(5 as u8) {
+            for i in 1_u8..5_u8 {
                 unused_colors.insert(from_digit(i.into(), 10).unwrap(), (44 * i, 44 * i, 44 * i));
             }
             unused_colors.insert('R', (127, 0, 0));
@@ -153,9 +153,9 @@ pub fn char_grid_to_solution(char_grid: &str) -> Solution {
         palette.insert(
             ch,
             ColorInfo {
-                ch: ch,
+                ch,
                 name: ch.to_string(),
-                rgb: rgb,
+                rgb,
                 color: Color(next_color),
             },
         );
@@ -278,7 +278,7 @@ pub fn solution_to_puzzle(solution: &Solution) -> Puzzle {
                 None => {}
                 Some(color) if color == puzzle::BACKGROUND => {}
                 Some(color) => clues.push(Clue {
-                    color: color,
+                    color,
                     count: run,
                 }),
             }
@@ -308,7 +308,7 @@ pub fn solution_to_puzzle(solution: &Solution) -> Puzzle {
                 None => {}
                 Some(color) if color == BACKGROUND => {}
                 Some(color) => clues.push(Clue {
-                    color: color,
+                    color,
                     count: run,
                 }),
             }
