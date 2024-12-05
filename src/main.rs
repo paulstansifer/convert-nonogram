@@ -9,6 +9,7 @@ mod puzzle;
 use std::{io::Read, path::PathBuf};
 
 use clap::Parser;
+use import::webpbn_to_puzzle;
 
 #[derive(Clone, Copy, Debug, clap::ValueEnum, Default, PartialEq, Eq)]
 enum NonogramFormat {
@@ -48,6 +49,18 @@ struct Args {
     trace_solve: bool,
 }
 
+fn read_path(path: &PathBuf) -> String {
+    let mut res = String::new();
+    if path == &PathBuf::from("-") {
+        std::io::stdin()
+            .read_to_string(&mut res)
+            .expect("bad read_to_string!");
+    } else {
+        res = String::from_utf8(std::fs::read(path).unwrap()).expect("not valid UTF-8!");
+    };
+    res
+}
+
 fn main() -> std::io::Result<()> {
     let args = Args::parse();
 
@@ -57,22 +70,21 @@ fn main() -> std::io::Result<()> {
 
             let solution = import::image_to_solution(&img);
 
-            (import::solution_to_puzzle(&solution), solution)
+            (import::solution_to_puzzle(&solution), Some(solution))
+        }
+        NonogramFormat::Webpbn => {
+            let webpbn_string = read_path(&args.input_path);
+
+            let puzzle = webpbn_to_puzzle(&webpbn_string);
+
+            (puzzle, None)
         }
         NonogramFormat::CharGrid => {
-            let mut grid_string = String::new();
-            if args.input_path == PathBuf::from("-") {
-                std::io::stdin()
-                    .read_to_string(&mut grid_string)
-                    .expect("bad read_to_string!");
-            } else {
-                grid_string = String::from_utf8(std::fs::read(args.input_path).unwrap())
-                    .expect("not valid UTF-8!");
-            };
+            let grid_string = read_path(&args.input_path);
 
             let solution = import::char_grid_to_solution(&grid_string);
 
-            (import::solution_to_puzzle(&solution), solution)
+            (import::solution_to_puzzle(&solution), Some(solution))
         }
         _ => todo!(),
     };
@@ -80,7 +92,7 @@ fn main() -> std::io::Result<()> {
     match args.output_path {
         Some(path) => {
             if args.output_format == NonogramFormat::Image {
-                export::emit_image(&solution, path).unwrap();
+                export::emit_image(&solution.unwrap(), path).unwrap();
             } else {
                 let output_data = match args.output_format {
                     NonogramFormat::Olsak => export::as_olsak(&puzzle),

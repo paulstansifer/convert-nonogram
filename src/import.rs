@@ -1,3 +1,4 @@
+use anyhow::bail;
 use image::{DynamicImage, GenericImageView, Pixel, Rgba};
 use std::{
     char::from_digit,
@@ -189,8 +190,140 @@ pub fn char_grid_to_solution(char_grid: &str) -> Solution {
     }
 }
 
+pub fn get_children<'a, 'input>(
+    node: roxmltree::Node<'a, 'input>,
+    tag: &str,
+) -> anyhow::Result<Vec<roxmltree::Node<'a, 'input>>> {
+    let mut res = vec![];
+
+    for child in node.children() {
+        if child.is_text() {
+            if child.text().unwrap().trim() != "" {
+                bail!("unexpected text: {}", child.text().unwrap());
+            }
+        }
+        if child.is_element() {
+            if child.tag_name().name() == tag {
+                res.push(child);
+            } else {
+                bail!(
+                    "unexpected element {}; was looking for {tag}",
+                    child.tag_name().name()
+                )
+            }
+        }
+    }
+
+    Ok(res)
+}
+
+pub fn get_single_child<'a, 'input>(
+    node: roxmltree::Node<'a, 'input>,
+    tag: &str,
+) -> anyhow::Result<roxmltree::Node<'a, 'input>> {
+    let mut res = get_children(node, tag)?;
+    if res.len() == 0 {
+        bail!("did not find the element {tag}");
+    }
+    if res.len() > 1 {
+        bail!("expected only one element named {tag}");
+    }
+    Ok(res.pop().unwrap())
+}
+
 pub fn webpbn_to_puzzle(webpbn: &str) -> Puzzle {
-    todo!()
+    let doc = roxmltree::Document::parse(webpbn).unwrap();
+    let puzzleset = doc.root_element();
+    let puzzle = get_single_child(puzzleset, "puzzle").unwrap();
+
+    let default_color = puzzle
+        .attribute("defaultcolor")
+        .expect("Expected a 'defaultcolor");
+    let mut next_color_index = 1;
+
+    let mut named_colors = HashMap::<String, Color>::new();
+
+    let mut res = Puzzle {
+        palette: HashMap::<Color, ColorInfo>::new(),
+        rows: vec![],
+        cols: vec![],
+    };
+
+    for puzzle_part in puzzle.children() {
+        if puzzle_part.tag_name().name() == "color" {
+            let color_name = puzzle_part.attribute("name").unwrap();
+            let color = if color_name == default_color {
+                BACKGROUND
+            } else {
+                Color(next_color_index)
+            };
+
+            if color != BACKGROUND {
+                next_color_index += 1
+            }
+
+            let hex_color = regex::Regex::new(
+                r"([0-9A-Za-z][0-9A-Za-z])([0-9A-Za-z][0-9A-Za-z])([0-9A-Za-z][0-9A-Za-z])",
+            )
+            .unwrap();
+
+            let color_text = puzzle_part.text().expect("Expected hex color in text");
+            let (_, component_strs) = hex_color
+                .captures(&color_text)
+                .expect("Expected a string of 6 hex digits")
+                .extract();
+
+            let [r, g, b] = component_strs.map(|s| u8::from_str_radix(s, 16).unwrap());
+
+            let color_info = ColorInfo {
+                // TODO: error if there's more than one char!
+                ch: puzzle_part
+                    .attribute("char")
+                    .unwrap()
+                    .chars()
+                    .next()
+                    .unwrap(),
+                name: color_name.to_string(),
+                rgb: (r, g, b),
+                color: color,
+            };
+
+            res.palette.insert(color, color_info);
+            named_colors.insert(color_name.to_string(), color);
+        } else if puzzle_part.tag_name().name() == "clues" {
+            let row = if puzzle_part.attribute("type") == Some("rows") {
+                true
+            } else if puzzle_part.attribute("type") == Some("columns") {
+                false
+            } else {
+                panic!("Expected rows or columns.")
+            };
+
+            let mut clue_lanes = vec![];
+
+            for lane in get_children(puzzle_part, "line").unwrap() {
+                let mut clues = vec![];
+                for block in get_children(lane, "count").unwrap() {
+                    clues.push(Clue {
+                        color: named_colors[block
+                            .attribute("color")
+                            .expect("Expected 'color' attribute")],
+                        count: u16::from_str_radix(&block.text().unwrap(), 10)
+                            .expect("Expected a number."),
+                    });
+                }
+                clue_lanes.push(clues);
+            }
+
+            if row {
+                res.rows = clue_lanes;
+            } else {
+                res.cols = clue_lanes;
+            }
+        }
+    }
+
+    res
 }
 
 pub fn solution_to_puzzle(solution: &Solution) -> Puzzle {
@@ -277,10 +410,7 @@ pub fn solution_to_puzzle(solution: &Solution) -> Puzzle {
             match cur_color {
                 None => {}
                 Some(color) if color == puzzle::BACKGROUND => {}
-                Some(color) => clues.push(Clue {
-                    color,
-                    count: run,
-                }),
+                Some(color) => clues.push(Clue { color, count: run }),
             }
             cur_color = color;
             run = 1;
@@ -307,10 +437,7 @@ pub fn solution_to_puzzle(solution: &Solution) -> Puzzle {
             match cur_color {
                 None => {}
                 Some(color) if color == BACKGROUND => {}
-                Some(color) => clues.push(Clue {
-                    color,
-                    count: run,
-                }),
+                Some(color) => clues.push(Clue { color, count: run }),
             }
             cur_color = color;
             run = 1;

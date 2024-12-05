@@ -17,6 +17,8 @@
         "pbn",
         "pbnsolve",
         "puzzleset",
+        "roxmltree",
+        "strs",
         "utf",
         "webpbn"
     ]
