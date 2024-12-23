@@ -163,17 +163,13 @@ fn display_step<'a>(
     // Hackish way of getting the original score...
     if scrub {
         let lane_arr: ndarray::Array1<Cell> = orig_lane.into();
-        let orig_score = scrub_heuristic(
-            clue_lane.clues,
-            lane_arr.rows().into_iter().next().unwrap(),
-        );
+        let orig_score =
+            scrub_heuristic(clue_lane.clues, lane_arr.rows().into_iter().next().unwrap());
         println!("   {}->{}", orig_score, clue_lane.scrub_score);
     } else {
         let lane_arr: ndarray::Array1<Cell> = orig_lane.into();
-        let orig_score = skim_heuristic(
-            clue_lane.clues,
-            lane_arr.rows().into_iter().next().unwrap(),
-        );
+        let orig_score =
+            skim_heuristic(clue_lane.clues, lane_arr.rows().into_iter().next().unwrap());
         println!("   {}->{}", orig_score, clue_lane.skim_score);
     }
 }
@@ -260,7 +256,7 @@ pub fn solve(puzzle: &Puzzle, trace_solve: bool) -> anyhow::Result<Report> {
 
         if will_scrub {
             if !report.affected_cells.is_empty() {
-                allowed_skims = 6;
+                allowed_skims = 10;
             }
         } else if report.affected_cells.is_empty() {
             allowed_skims -= 1;

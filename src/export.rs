@@ -1,8 +1,84 @@
 use std::path::Path;
 
+use axohtml::{elements::html, html, text};
 use image::{Rgb, RgbImage};
 
 use crate::puzzle::{Puzzle, Solution};
+
+pub fn as_html(puzzle: &Puzzle) -> String {
+    let html: axohtml::dom::DOMTree<String> = html!(
+        <html>
+            <head>
+            <title></title>
+            <style>
+            {text!(
+"
+table, td, th {
+    border-collapse: collapse;
+}
+td {
+    border: 1px solid black;
+    width: 40px;
+    height: 40px;
+}
+
+table tr:nth-of-type(5n) td {
+    border-bottom: 3px solid;
+}
+table td:nth-of-type(5n) {
+    border-right: 3px solid;
+}
+
+table tr:last-child td {
+    border-bottom: 1px solid;
+}
+table td:last-child {
+    border-right: 1px solid;
+}
+.col {
+  vertical-align: bottom;
+  border-top: none;
+  font-family: courier;
+}
+.row {
+  text-align: right;
+  border-left: none;
+  font-family: courier;
+  padding-right: 6px;
+}
+
+
+    ")}
+            </style>
+            </head>
+            <body>
+                <table>
+                    <thead>
+                        <tr>
+                        <th></th>
+                        { puzzle.cols.iter().map(|col| html!(<th class="col">{
+                            col.iter().map(|clue| html!(<div>{text!("{} ", clue.count)} </div>))
+                        }</th>))}
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {
+                        puzzle.rows.iter().map(|row| html!(<tr><th class="row">{
+                            row.iter().map(|clue| html!(<span>{text!("{} ", clue.count)} </span>))
+                        }</th>
+                        {
+                            puzzle.cols.iter().map(|_| html!(<td></td>))
+                        }
+                        </tr>))
+                    }
+                    </tbody>
+                </table>
+            </body>
+        </html>
+    );
+
+    html.to_string()
+}
 
 pub fn as_webpbn(puzzle: &Puzzle) -> String {
     use indoc::indoc;

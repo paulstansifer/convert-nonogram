@@ -19,11 +19,13 @@ enum NonogramFormat {
     Image,
     /// The widely-used format associated with http://webpbn.com.
     Webpbn,
-    /// The format used by the 'olsak' solver.
+    /// (Export-only.) The format used by the 'olsak' solver.
     Olsak,
     /// A grid of characters. Attempts some sensible matching of characters to colors, but results
     /// will vary.
     CharGrid,
+    /// (Export-only.) An HTML representation of a puzzle.
+    Html,
 }
 
 #[derive(clap::Parser, Debug)]
@@ -97,6 +99,7 @@ fn main() -> std::io::Result<()> {
                 let output_data = match args.output_format {
                     NonogramFormat::Olsak => export::as_olsak(&puzzle),
                     NonogramFormat::Webpbn => export::as_webpbn(&puzzle),
+                    NonogramFormat::Html => export::as_html(&puzzle),
                     NonogramFormat::Image => panic!(),
                     _ => {
                         todo!()
