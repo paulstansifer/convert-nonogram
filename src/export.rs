@@ -3,7 +3,12 @@ use std::path::Path;
 use axohtml::{elements::html, html, text};
 use image::{Rgb, RgbImage};
 
-use crate::puzzle::{Puzzle, Solution};
+use crate::puzzle::{Clue, Puzzle, Solution};
+
+fn style_color(c: &Clue, puzzle: &Puzzle) -> String {
+    let (r, g, b) = puzzle.palette[&c.color].rgb;
+    format!("color:rgb({},{},{})", r, g, b)
+}
 
 pub fn as_html(puzzle: &Puzzle) -> String {
     let html: axohtml::dom::DOMTree<String> = html!(
@@ -57,14 +62,14 @@ table td:last-child {
                         <tr>
                         <th></th>
                         { puzzle.cols.iter().map(|col| html!(<th class="col">{
-                            col.iter().map(|clue| html!(<div>{text!("{} ", clue.count)} </div>))
+                            col.iter().map(|clue| html!(<div style=(style_color(clue, puzzle))>{text!("{} ", clue.count)} </div>))
                         }</th>))}
                         </tr>
                     </thead>
                     <tbody>
                     {
                         puzzle.rows.iter().map(|row| html!(<tr><th class="row">{
-                            row.iter().map(|clue| html!(<span>{text!("{} ", clue.count)} </span>))
+                            row.iter().map(|clue| html!(<span style=(style_color(clue, puzzle))>{text!("{} ", clue.count)} </span>))
                         }</th>
                         {
                             puzzle.cols.iter().map(|_| html!(<td></td>))
