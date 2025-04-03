@@ -267,7 +267,6 @@ pub fn solve(puzzle: &Puzzle, trace_solve: bool) -> anyhow::Result<Report> {
 
         if cells_left == 0 {
             progress.finish_and_clear();
-            println!();
             println!("Solved in {skims} skims, {scrubs} scrubs.");
             break;
         }
@@ -292,7 +291,7 @@ pub fn solve(puzzle: &Puzzle, trace_solve: bool) -> anyhow::Result<Report> {
         }
     }
 
-    print_grid(&grid, puzzle);
+    // Not printing; we probably already know what it looks like!
 
     Ok(Report {})
 }

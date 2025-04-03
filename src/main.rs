@@ -116,9 +116,13 @@ fn main() -> std::io::Result<()> {
             }
         }
 
-        None => {
-            let _ = grid_solve::solve(&puzzle, args.trace_solve);
-        }
+        None => match grid_solve::solve(&puzzle, args.trace_solve) {
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!("{}", e);
+                std::process::exit(1);
+            }
+        },
     }
 
     Ok(())

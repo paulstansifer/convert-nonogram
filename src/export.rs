@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use axohtml::{elements::html, html, text};
+use axohtml::{html, text};
 use image::{Rgb, RgbImage};
 
 use crate::puzzle::{Clue, Puzzle, Solution};
