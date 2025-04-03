@@ -67,6 +67,9 @@ fn main() -> std::io::Result<()> {
     let args = Args::parse();
 
     let (puzzle, solution) = match args.input_format {
+        NonogramFormat::Html => {
+            panic!("HTML input is not supported.")
+        }
         NonogramFormat::Image => {
             let img = image::open(args.input_path).unwrap();
 
@@ -114,7 +117,7 @@ fn main() -> std::io::Result<()> {
         }
 
         None => {
-            grid_solve::solve(&puzzle, args.trace_solve).unwrap();
+            let _ = grid_solve::solve(&puzzle, args.trace_solve);
         }
     }
 

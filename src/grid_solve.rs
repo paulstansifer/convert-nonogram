@@ -1,4 +1,3 @@
-use anyhow::bail;
 use colored::Colorize;
 use ndarray::{ArrayView1, ArrayViewMut1};
 
@@ -24,6 +23,10 @@ pub struct LaneState<'a> {
 }
 
 impl<'a> LaneState<'a> {
+    pub fn text_coord(&self) -> String {
+        format!("{}{}", if self.row { "R" } else { "C" }, self.index + 1)
+    }
+
     fn new(clues: &'a [Clue], row: bool, idx: usize, grid: &Grid) -> LaneState<'a> {
         let mut res = LaneState {
             clues,
@@ -187,12 +190,15 @@ pub fn solve(puzzle: &Puzzle, trace_solve: bool) -> anyhow::Result<Report> {
         solve_lanes.push(LaneState::new(clue_col, false, idx, &grid));
     }
 
+    let progress = indicatif::ProgressBar::new_spinner();
+
     let mut cells_left = puzzle.rows.len() * puzzle.cols.len();
     let mut skims = 0;
     let mut scrubs = 0;
 
     let mut allowed_skims = 10;
     loop {
+        progress.tick();
         let will_scrub = allowed_skims == 0;
 
         let (report, was_row) = {
@@ -201,9 +207,10 @@ pub fn solve(puzzle: &Puzzle, trace_solve: bool) -> anyhow::Result<Report> {
                 None => {
                     if will_scrub {
                         print_grid(&grid, puzzle);
-                        bail!("Cannot solve: {} cells left", cells_left);
+                        anyhow::bail!(
+                            "Unable to line-solve after {skims} skims and {scrubs} scrubs!"
+                        );
                     } else {
-                        print!("=>!! ");
                         allowed_skims = 0; // Try again, but scrub.
                         continue;
                     }
@@ -211,6 +218,16 @@ pub fn solve(puzzle: &Puzzle, trace_solve: bool) -> anyhow::Result<Report> {
             };
 
             let best_grid_lane = get_mut_grid_lane(best_clue_lane, &mut grid);
+
+            progress.set_message(format!(
+                "skims: {skims: >6}  scrubs: {scrubs: >6}  cells left: {cells_left: >6}  skims allowed: {allowed_skims: >3}  {} {}", if will_scrub {
+                    "scrubbing".red()
+                } else {
+                    "skimming".green()
+                },
+                best_clue_lane.text_coord(),
+            ));
+
             let orig_version_of_line: Vec<Cell> = best_grid_lane.iter().cloned().collect();
 
             let report = if will_scrub {
@@ -249,6 +266,7 @@ pub fn solve(puzzle: &Puzzle, trace_solve: bool) -> anyhow::Result<Report> {
         };
 
         if cells_left == 0 {
+            progress.finish_and_clear();
             println!();
             println!("Solved in {skims} skims, {scrubs} scrubs.");
             break;
