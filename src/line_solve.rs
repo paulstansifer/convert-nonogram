@@ -1,5 +1,5 @@
 // They're used in tests, but it can't see that.
-#![allow(unused_macros)]
+#![allow(unused_macros, dead_code)]
 
 use std::u32;
 
@@ -56,6 +56,17 @@ impl Cell {
 
     pub fn can_be(&self, color: Color) -> bool {
         (self.possible_color_mask & 1 << color.0) != 0
+    }
+
+    // TODO: this could be a lot more efficient by using a bitmask as an iterator.
+    pub fn can_be_iter(&self) -> impl Iterator<Item = Color> {
+        let mut res = vec![];
+        for i in 0..32 {
+            if self.possible_color_mask & (1 << i) != 0 {
+                res.push(Color(i));
+            }
+        }
+        res.into_iter()
     }
 
     pub fn known_or(&self) -> Option<Color> {
@@ -264,6 +275,18 @@ fn learn_cell_intersect(
     Ok(())
 }
 
+fn learn_cell_not(
+    color: Color,
+    lane: &mut ArrayViewMut1<Cell>,
+    idx: usize,
+    affected_cells: &mut Vec<usize>,
+) -> anyhow::Result<()> {
+    if lane[idx].learn_that_not(color)? {
+        affected_cells.push(idx);
+    }
+    Ok(())
+}
+
 struct ClueAdjIterator<'a> {
     clues: &'a [Clue],
     i: usize,
@@ -294,7 +317,11 @@ impl<'a> Iterator for ClueAdjIterator<'a> {
 
 ///  For example, (1 2 1) with no other constraints gives
 ///  .] .  .  .]  .  .]
-fn packed_extents(clues: &[Clue], lane: &ArrayViewMut1<Cell>, reversed: bool) -> Vec<usize> {
+fn packed_extents(
+    clues: &[Clue],
+    lane: &ArrayViewMut1<Cell>,
+    reversed: bool,
+) -> anyhow::Result<Vec<usize>> {
     let mut extents: Vec<usize> = vec![];
 
     let lane_at = |idx: usize| -> Cell {
@@ -326,7 +353,9 @@ fn packed_extents(clues: &[Clue], lane: &ArrayViewMut1<Cell>, reversed: bool) ->
         while !placeable {
             placeable = true;
             for possible_pos in (pos..(pos + clue.count as usize)).rev() {
-                // TODO: `possible_pos` can get too high if clues are contradictory; use `Result`
+                if possible_pos >= lane.len() {
+                    anyhow::bail!("impossible clue");
+                }
                 let cur = lane_at(possible_pos);
 
                 if !cur.can_be(clue.color) {
@@ -389,7 +418,7 @@ fn packed_extents(clues: &[Clue], lane: &ArrayViewMut1<Cell>, reversed: bool) ->
         }
     }
 
-    extents
+    Ok(extents)
 }
 
 pub fn skim_line(clues: &[Clue], mut lane: ArrayViewMut1<Cell>) -> anyhow::Result<ScrubReport> {
@@ -404,8 +433,8 @@ pub fn skim_line(clues: &[Clue], mut lane: ArrayViewMut1<Cell>) -> anyhow::Resul
         });
     }
 
-    let left_packed_right_extents = packed_extents(clues, &lane, false);
-    let right_packed_left_extents = packed_extents(clues, &lane, true);
+    let left_packed_right_extents = packed_extents(clues, &lane, false)?;
+    let right_packed_left_extents = packed_extents(clues, &lane, true)?;
 
     for ((gap_before, clue, gap_after), (left_extent, right_extent)) in ClueAdjIterator::new(clues)
         .zip(
@@ -504,59 +533,29 @@ pub fn skim_heuristic(clues: &[Clue], lane: ArrayView1<Cell>) -> i32 {
 }
 
 pub fn scrub_line(cs: &[Clue], mut lane: ArrayViewMut1<Cell>) -> anyhow::Result<ScrubReport> {
-    let mut possibilities_lane: Vec<Cell> = vec![Cell::new_impossible(); lane.len()];
-
-    let dimension = lane.len() as u16;
-
-    let bg_sq = bg_squares(cs, dimension);
-
-    let mut found_something = false;
-    for gaps in PossibleArrangements::new(cs.len() as u16, bg_sq) {
-        let mut arrangement_impossible = false;
-        for i in 1..cs.len() {
-            if cs[i - 1].color == cs[i].color && gaps[i] == 0 {
-                // Adjacent blocks of the same color need at least one space of separation
-                arrangement_impossible = true;
-            }
-        }
-        if arrangement_impossible {
-            continue;
-        }
-
-        for (this_color, known_color) in Arrangement::new(cs, &gaps, dimension).zip(lane.iter()) {
-            if !known_color.can_be(this_color) {
-                arrangement_impossible = true;
-            }
-        }
-        if arrangement_impossible {
-            continue;
-        }
-
-        found_something = true;
-
-        for (possibility_color, this_color) in possibilities_lane
-            .iter_mut()
-            .zip(Arrangement::new(cs, &gaps, dimension))
-        {
-            possibility_color.actually_could_be(this_color);
-        }
-    }
-
-    if !found_something {
-        bail!("No possible arrangements found.")
-    }
-
     let mut res = ScrubReport {
         affected_cells: vec![],
     };
 
-    for (idx, possible_colors) in possibilities_lane.iter().enumerate() {
-        if possible_colors.contradictory() {
-            bail!("Scrubbing found no arrangements")
+    for i in 0..lane.len() {
+        if lane[i].is_known() {
+            continue;
         }
 
-        learn_cell_intersect(*possible_colors, &mut lane, idx, &mut res.affected_cells)
-            .expect("scrubbing error")
+        for color in lane[i].can_be_iter() {
+            let mut hypothetical_lane = lane.to_owned();
+
+            hypothetical_lane[i] = Cell::from_color(color);
+
+            match skim_line(cs, hypothetical_lane.view_mut()) {
+                Ok(_) => { /* no luck: no contradiction */ }
+                Err(_) => {
+                    // `color` is impossible here
+                    learn_cell_not(color, &mut lane, i, &mut res.affected_cells)
+                        .context("scrub")?;
+                }
+            }
+        }
     }
 
     Ok(res)

@@ -191,6 +191,9 @@ pub fn solve(puzzle: &Puzzle, trace_solve: bool) -> anyhow::Result<Report> {
     }
 
     let progress = indicatif::ProgressBar::new_spinner();
+    if trace_solve {
+        progress.finish_and_clear();
+    }
 
     let mut cells_left = puzzle.rows.len() * puzzle.cols.len();
     let mut skims = 0;
