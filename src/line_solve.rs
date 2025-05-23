@@ -160,33 +160,53 @@ impl Iterator for Arrangement<'_> {
             return None;
         }
 
-        let clue: Clue = if self.block % 2 == 0 {
-            // In a gap
-            if self.block / 2 == self.gaps.len() {
-                // Last gap isn't explicitly represented!
-                self.pos_in_block += 1;
-                self.overall_pos += 1;
+        let color_to_yield: Color;
+
+        if self.block % 2 == 0 { // Gap block
+            let gap_len: u16 = if self.block / 2 == self.gaps.len() {
+                // Last gap isn't explicitly represented, effectively infinite but bounded by self.len
+                // We just need to yield BACKGROUND until self.overall_pos >= self.len
+                self.overall_pos +=1;
+                self.pos_in_block +=1; // Conceptually, pos_in_block advances in this "virtual" last gap
                 return Some(BACKGROUND);
             } else {
-                // dummy clue for explicit background
-                Clue {
-                    color: BACKGROUND,
-                    count: self.gaps[self.block / 2],
-                }
-            }
-        } else {
-            self.cs[(self.block - 1) / 2]
-        };
+                self.gaps[self.block / 2]
+            };
 
-        if self.pos_in_block >= clue.count {
-            self.block += 1;
-            self.pos_in_block = 0;
-            return self.next(); // Oops, we were off the end!
+            if gap_len == 0 { // Explicit zero-length gap
+                self.block += 1;
+                self.pos_in_block = 0;
+                return self.next();
+            }
+
+            if self.pos_in_block >= gap_len {
+                self.block += 1;
+                self.pos_in_block = 0;
+                return self.next(); // Finished this gap block
+            }
+            color_to_yield = BACKGROUND;
+        } else { // Clue block
+            let current_clue_obj = &self.cs[(self.block - 1) / 2];
+            let clue_total_length = current_clue_obj.total_length();
+
+            if clue_total_length == 0 {
+                self.block += 1;
+                self.pos_in_block = 0;
+                return self.next(); // Skip zero-length clues
+            }
+
+            if self.pos_in_block >= clue_total_length {
+                self.block += 1;
+                self.pos_in_block = 0;
+                return self.next(); // Finished this clue block
+            }
+            color_to_yield = current_clue_obj.get_color_at_offset(self.pos_in_block);
         }
+
         self.pos_in_block += 1;
         self.overall_pos += 1;
 
-        Some(clue.color)
+        Some(color_to_yield)
     }
 }
 
@@ -304,12 +324,25 @@ impl<'a> Iterator for ClueAdjIterator<'a> {
         if self.i == self.clues.len() {
             return None;
         }
-        let res = (
-            self.i > 0 && self.clues[self.i - 1].color == self.clues[self.i].color,
-            &self.clues[self.i],
-            self.i < self.clues.len() - 1
-                && self.clues[self.i + 1].color == self.clues[self.i].color,
-        );
+        let current_clue = &self.clues[self.i];
+
+        let needs_separator_before = if self.i > 0 {
+            let prev_clue = &self.clues[self.i - 1];
+            (prev_clue.post_cap.is_none() || current_clue.pre_cap.is_none())
+                && prev_clue.color == current_clue.color
+        } else {
+            false
+        };
+
+        let needs_separator_after = if self.i < self.clues.len() - 1 {
+            let next_clue = &self.clues[self.i + 1];
+            (current_clue.post_cap.is_none() || next_clue.pre_cap.is_none())
+                && next_clue.color == current_clue.color
+        } else {
+            false
+        };
+
+        let res = (needs_separator_before, current_clue, needs_separator_after);
         self.i += 1;
         Some(res)
     }
@@ -342,32 +375,50 @@ fn packed_extents(
     // -- Pack to the left (we've abstracted over `reversed`) --
 
     let mut pos = 0_usize;
-    let mut last_color = None;
+    // last_color removed
     for clue_idx in 0..clues.len() {
-        let clue = clue_at(clue_idx);
-        if Some(clue.color) == last_color {
-            pos += 1;
+        let clue = clue_at(clue_idx); // clue is clue_at(clue_idx)
+
+        // 2.a Separator Logic
+        if clue_idx > 0 {
+            let prev_clue = clue_at(clue_idx - 1);
+            let current_clue = clue; // current_clue is clue_at(clue_idx)
+            if (prev_clue.post_cap.is_none() || current_clue.pre_cap.is_none()) && prev_clue.color == current_clue.color {
+                pos += 1;
+            }
         }
+
+        // 2.b Placement Loop
+        let total_len = clue.total_length();
+        if total_len == 0 {
+            continue;
+        }
+
         // Scanning backwards for mismatches lets us jump farther sometimes.
         let mut placeable = false;
         while !placeable {
             placeable = true;
-            for possible_pos in (pos..(pos + clue.count as usize)).rev() {
-                if possible_pos >= lane.len() {
-                    anyhow::bail!("impossible clue");
+            // Loop for checking individual cells updated to use total_len
+            for current_lane_idx in (pos..(pos + total_len as usize)).rev() {
+                if current_lane_idx >= lane.len() {
+                    anyhow::bail!("impossible clue: current_lane_idx {} exceeds lane length {}", current_lane_idx, lane.len());
                 }
-                let cur = lane_at(possible_pos);
+                let cur = lane_at(current_lane_idx);
+                
+                let offset_in_clue = (current_lane_idx - pos) as u16;
+                let required_color = clue.get_color_at_offset(offset_in_clue);
 
-                if !cur.can_be(clue.color) {
-                    pos = possible_pos + 1;
+                if !cur.can_be(required_color) {
+                    pos = current_lane_idx + 1; // pos updated
                     placeable = false;
                     break;
                 }
             }
         }
-        extents.push(pos + clue.count as usize - 1);
-        pos += clue.count as usize;
-        last_color = Some(clue.color);
+        // 2.c Storing Extents and Advancing Position
+        extents.push(pos + total_len as usize - 1); // Use total_len
+        pos += total_len as usize; // Use total_len
+        // last_color assignment removed
     }
 
     // TODO: pull out into a separate function!
@@ -397,7 +448,8 @@ fn packed_extents(
             //  0  1  2  3  4  5  6  7  8  9
             //                   [      #]
             // 8 - 3 = 5 is the next cell we need to examine. But we'll `-= 1` below, so add 1.
-            i = extents[cur_extent_idx] + 1 - clue_at(cur_extent_idx).count as usize;
+            // 2.d Second Part: Use total_length()
+            i = extents[cur_extent_idx] + 1 - clue_at(cur_extent_idx).total_length() as usize;
             if cur_extent_idx == 0 {
                 break;
             }
@@ -449,12 +501,19 @@ pub fn skim_line(clues: &[Clue], mut lane: ArrayViewMut1<Cell>) -> anyhow::Resul
 
         // TODO: this seems to still be necessary, despite the background inference below!
         // Figure out why.
-        if (*right_extent as i16 - *left_extent as i16) + 1 == clue.count as i16 {
+        // The condition now uses clue.total_length()
+        if (*right_extent as i16 - *left_extent as i16) + 1 == clue.total_length() as i16 {
             if gap_before {
-                learn_cell(BACKGROUND, &mut lane, left_extent - 1, &mut affected).context("gb")?
+                // Ensure left_extent > 0 before trying to access left_extent - 1
+                if *left_extent > 0 {
+                    learn_cell(BACKGROUND, &mut lane, left_extent - 1, &mut affected).context("gb")?;
+                }
             }
             if gap_after {
-                learn_cell(BACKGROUND, &mut lane, right_extent + 1, &mut affected).context("ga")?
+                // Ensure right_extent < lane.len() - 1 before trying to access right_extent + 1
+                if *right_extent < lane.len() - 1 {
+                    learn_cell(BACKGROUND, &mut lane, right_extent + 1, &mut affected).context("ga")?;
+                }
             }
         }
     }
@@ -621,29 +680,150 @@ pub fn scrub_heuristic(clues: &[Clue], lane: ArrayView1<Cell>) -> i32 {
 
 #[test]
 fn arrangement_test() {
-    let w = BACKGROUND;
-    let r = Color(1);
-    let g = Color(2);
+    let w = BACKGROUND; // Color(0)
+    let r_col = Color(1); // Main Red
+    let g_col = Color(2); // Main Green
+    let cap_c1 = Color(3); // Cap color 1
+    let cap_c2 = Color(4); // Cap color 2
 
-    let clues = vec![Clue { color: r, count: 2 }, Clue { color: g, count: 3 }];
+    // Existing test, updated
+    let clues1 = vec![
+        Clue { color: r_col, count: 2, pre_cap: None, post_cap: None },
+        Clue { color: g_col, count: 3, pre_cap: None, post_cap: None },
+    ];
 
-    let gaps_1 = vec![0, 0];
-    let arr_1 = Arrangement::new(&clues, &gaps_1, 10);
+    let gaps_1a = vec![0, 0];
+    let arr_1a = Arrangement::new(&clues1, &gaps_1a, 10);
     assert_eq!(
-        arr_1.collect::<Vec<_>>(),
-        vec![r, r, g, g, g, w, w, w, w, w]
+        arr_1a.collect::<Vec<_>>(),
+        vec![r_col, r_col, g_col, g_col, g_col, w, w, w, w, w]
     );
 
-    let gaps_1 = vec![1, 1];
-    let arr_1 = Arrangement::new(&clues, &gaps_1, 10);
+    let gaps_1b = vec![1, 1];
+    let arr_1b = Arrangement::new(&clues1, &gaps_1b, 10);
     assert_eq!(
-        arr_1.collect::<Vec<_>>(),
-        vec![w, r, r, w, g, g, g, w, w, w]
+        arr_1b.collect::<Vec<_>>(),
+        vec![w, r_col, r_col, w, g_col, g_col, g_col, w, w, w]
+    );
+
+    // New test case 2.a
+    let clues2a = vec![
+        Clue { color: r_col, count: 1, pre_cap: Some((cap_c1, 1)), post_cap: None },
+        Clue { color: g_col, count: 1, pre_cap: None, post_cap: None },
+    ];
+    let gaps_2a = vec![0,0]; // No gap between clue1 and clue2
+    let arr_2a = Arrangement::new(&clues2a, &gaps_2a, 5); // cap_c1, r_col, g_col, w, w
+    assert_eq!(
+        arr_2a.collect::<Vec<_>>(),
+        vec![cap_c1, r_col, g_col, w, w]
+    );
+    
+    // New test case 2.b
+    let clues2b = vec![
+        Clue { color: r_col, count: 1, pre_cap: None, post_cap: Some((cap_c1, 1)) }, // R cap_c1
+        Clue { color: g_col, count: 1, pre_cap: Some((cap_c2, 1)), post_cap: None }, // cap_c2 G
+    ];
+    let gaps_2b = vec![0]; // No gap specified between them, means they are adjacent if no separator needed by logic
+                           // total length: R(1) cap_c1(1) cap_c2(1) G(1) = 4
+    let arr_2b = Arrangement::new(&clues2b, &gaps_2b, 4);
+    assert_eq!(
+        arr_2b.collect::<Vec<_>>(),
+        // Expected: R, cap_c1, cap_c2, G. Separator logic is not part of Arrangement iterator.
+        // Arrangement just lays out what's in the clue based on total_length.
+        vec![r_col, cap_c1, cap_c2, g_col]
+    );
+
+    let gaps_2c = vec![1]; // A gap of 1 between them
+    let arr_2c = Arrangement::new(&clues2b, &gaps_2c, 5); // R cap_c1 W cap_c2 G
+    assert_eq!(
+        arr_2c.collect::<Vec<_>>(),
+        vec![r_col, cap_c1, w, cap_c2, g_col]
     );
 }
 
+// Helper for skim_line_cap_tests
+fn make_clue(color: Color, count: u16, pre_cap: Option<(Color, u16)>, post_cap: Option<(Color, u16)>) -> Clue {
+    Clue { color, count, pre_cap, post_cap }
+}
+
 #[test]
-fn arrange_gaps_test() {
+fn skim_line_cap_tests() {
+    // Define Colors
+    let w_col = BACKGROUND; // Color(0)
+    let c1_col = Color(1);
+    let c2_col = Color(2);
+    let cap_a_col = Color(3);
+    let cap_b_col = Color(4);
+
+    // Define Cells
+    let x_cell = Cell::new_anything(); // Can be anything
+    let w_cell = Cell::from_color(w_col);
+    let c1_cell = Cell::from_color(c1_col);
+    let c2_cell = Cell::from_color(c2_col);
+    let cap_a_cell = Cell::from_color(cap_a_col);
+    let cap_b_cell = Cell::from_color(cap_b_col);
+
+    // Test Case 3.1 (Packing with Pre-Cap)
+    // Clues: [{ color: C1, count: 2, pre_cap: Some((CAP_A, 1)), post_cap: None }] (CAP_A C1 C1)
+    // Lane: [x, x, x, x, x] (length 5)
+    // Expected: [x, CAP_A, C1, C1, x]
+    let clues_3_1 = vec![make_clue(c1_col, 2, Some((cap_a_col, 1)), None)];
+    let mut lane_3_1 = ndarray::arr1(&[x_cell, x_cell, x_cell, x_cell, x_cell]);
+    skim_line(&clues_3_1, lane_3_1.view_mut()).expect("3.1 failed");
+    assert_eq!(lane_3_1, ndarray::arr1(&[x_cell, cap_a_cell, c1_cell, c1_cell, x_cell]));
+
+    // Test Case 3.2 (Separator: Same Main, No Caps at Interface)
+    // Clues: [{ color: C1, count: 1, pre_cap: None, post_cap: None }, { color: C1, count: 1, pre_cap: None, post_cap: None }] (C1, C1)
+    // Lane: [x, x, x] (length 3)
+    // Expected: [C1, W, C1]
+    let clues_3_2 = vec![
+        make_clue(c1_col, 1, None, None),
+        make_clue(c1_col, 1, None, None),
+    ];
+    let mut lane_3_2 = ndarray::arr1(&[x_cell, x_cell, x_cell]);
+    skim_line(&clues_3_2, lane_3_2.view_mut()).expect("3.2 failed");
+    assert_eq!(lane_3_2, ndarray::arr1(&[c1_cell, w_cell, c1_cell]));
+
+    // Test Case 3.3 (No Separator: Same Main, Caps at Interface)
+    // Clues: [{ color: C1, count: 1, pre_cap: None, post_cap: Some((CAP_A, 1)) }, { color: C1, count: 1, pre_cap: Some((CAP_A, 1)), post_cap: None }] (C1 CAP_A, CAP_A C1)
+    // Lane: [x, x, x, x] (length 4)
+    // Expected: [C1, CAP_A, CAP_A, C1]
+    let clues_3_3 = vec![
+        make_clue(c1_col, 1, None, Some((cap_a_col, 1))),
+        make_clue(c1_col, 1, Some((cap_a_col, 1)), None),
+    ];
+    let mut lane_3_3 = ndarray::arr1(&[x_cell, x_cell, x_cell, x_cell]);
+    skim_line(&clues_3_3, lane_3_3.view_mut()).expect("3.3 failed");
+    assert_eq!(lane_3_3, ndarray::arr1(&[c1_cell, cap_a_cell, cap_a_cell, c1_cell]));
+
+    // Test Case 3.4 (No Separator: Different Main Colors)
+    // Clues: [{ color: C1, count: 1, pre_cap: None, post_cap: None }, { color: C2, count: 1, pre_cap: None, post_cap: None }] (C1, C2)
+    // Lane: [x, x] (length 2)
+    // Expected: [C1, C2]
+    let clues_3_4 = vec![
+        make_clue(c1_col, 1, None, None),
+        make_clue(c2_col, 1, None, None),
+    ];
+    let mut lane_3_4 = ndarray::arr1(&[x_cell, x_cell]);
+    skim_line(&clues_3_4, lane_3_4.view_mut()).expect("3.4 failed");
+    assert_eq!(lane_3_4, ndarray::arr1(&[c1_cell, c2_cell]));
+
+    // Test Case 3.5 (Packing and Separator with Mixed Caps)
+    // Clue A: { color: C1, count: 2, pre_cap: Some((CAP_A,1)), post_cap: None } (CAP_A C1 C1)
+    // Clue B: { color: C1, count: 1, pre_cap: None, post_cap: Some((CAP_B,1)) } (C1 CAP_B)
+    // Clues: [Clue A, Clue B] -> Separator IS required.
+    // Lane: [x, x, x, x, x, x] (length 6 for CAP_A C1 C1 W C1 CAP_B)
+    // Expected: [CAP_A, C1, C1, W, C1, CAP_B]
+    let clues_3_5 = vec![
+        make_clue(c1_col, 2, Some((cap_a_col, 1)), None), // CAP_A C1 C1
+        make_clue(c1_col, 1, None, Some((cap_b_col, 1))), // C1 CAP_B
+    ];
+    let mut lane_3_5 = ndarray::arr1(&[x_cell, x_cell, x_cell, x_cell, x_cell, x_cell]);
+    skim_line(&clues_3_5, lane_3_5.view_mut()).expect("3.5 failed");
+    assert_eq!(lane_3_5, ndarray::arr1(&[cap_a_cell, c1_cell, c1_cell, w_cell, c1_cell, cap_b_cell]));
+}
+
+#[test]
     {
         assert_eq!(
             PossibleArrangements::new(3, 1).collect::<Vec<_>>(),
@@ -677,7 +857,7 @@ macro_rules! t_scrub {
         {
             let mut initial = ndarray::arr1(&[ $($state),* ]);
             scrub_line(
-                &vec![ $( Clue { color: $color.unwrap_color(), count: $count} ),* ],
+                &vec![ $( Clue { color: $color.unwrap_color(), count: $count, pre_cap: None, post_cap: None } ),* ],
                 initial.rows_mut().into_iter().next().unwrap())
                     .expect("impossible!");
             initial
@@ -690,7 +870,7 @@ macro_rules! t_skim {
         {
             let mut initial = ndarray::arr1(&[ $($state),* ]);
             skim_line(
-                &vec![ $( Clue { color: $color.unwrap_color(), count: $count} ),* ],
+                &vec![ $( Clue { color: $color.unwrap_color(), count: $count, pre_cap: None, post_cap: None } ),* ],
                 initial.rows_mut().into_iter().next().unwrap())
                     .expect("impossible!");
             initial
@@ -706,9 +886,11 @@ macro_rules! t_line {
 
 #[test]
 fn scrub_test() {
-    let bw = Cell::from_colors(&[BACKGROUND, Color(1)]);
-    let w = Cell::from_color(Color(0));
-    let b = Cell::from_color(Color(1));
+    let bw = Cell::from_colors(&[BACKGROUND, Color(1)]); // Black or White
+    let w = Cell::from_color(BACKGROUND); // White (Color(0))
+    let b = Cell::from_color(Color(1)); // Black
+    
+    // Existing tests in t_scrub! are already updated due to macro modification.
 
     assert_eq!(t_scrub!([b, 1]  bw, bw, bw, bw), t_line!(bw, bw, bw, bw));
 
@@ -740,6 +922,55 @@ fn scrub_test() {
         t_scrub!([r, 2; b, 2]  rbw, rbw, rbw, rbw, rbw),
         t_line!(rw, r, rbw, b, bw)
     );
+
+    // New test case for scrub_line with caps (Point 4)
+    // Clue: [{color: C1, count: 1, pre_cap: Some((CAP_A, 1)), post_cap: None}] (CAP_A C1)
+    // Lane: [cell_not_CAP_A, x, x] (length 3).
+    // scrub_line should deduce [cell_not_CAP_A, CAP_A, C1].
+    // Define new colors/cells for this specific test if not already covered
+    let c1_col = Color(1); // Re-use 'b' for C1 for simplicity if it matches Color(1)
+    let cap_a_col = Color(5); // New cap color to avoid conflict with r,g,b,w etc.
+    
+    let c1_cell = Cell::from_color(c1_col);
+    let cap_a_cell = Cell::from_color(cap_a_col);
+    let x_cell = Cell::new_anything();
+
+    // cell_not_CAP_A: can be BACKGROUND, C1, C2 (assuming C2=Color(2) exists from other tests)
+    // For this test, let's make it not BACKGROUND, not C1, not CAP_A.
+    // If BACKGROUND is Color(0), C1 is Color(1), R is Color(2), G is Color(3), CAP_C1 is Color(4)
+    // Let C1 for this test be Color(1) (like 'b')
+    // Let CAP_A be Color(5)
+    let cell_not_cap_a = Cell::from_colors(&[BACKGROUND, c1_col, Color(2), Color(3), Color(4)]);
+
+
+    let clues_scrub_cap = vec![
+        Clue { color: c1_col, count: 1, pre_cap: Some((cap_a_col, 1)), post_cap: None }
+    ];
+    let mut lane_scrub_cap = ndarray::arr1(&[cell_not_cap_a, x_cell, x_cell]);
+    // Expected: [cell_not_cap_a, cap_a_cell, c1_cell]
+    // scrub_line will try to set lane_scrub_cap[1] to cap_a_col. If that leads to a contradiction
+    // (it won't here), it would mark cap_a_col as impossible for lane_scrub_cap[1].
+    // Then it would try to set lane_scrub_cap[1] to something else.
+    // The key is that if lane_scrub_cap[0] CANNOT be cap_a_col, and the only way to place the clue
+    // starting at index 0 is [cap_a_col, c1_col, ...], then that placement is impossible.
+    // If the clue MUST start at index 1 (because index 0 cannot be cap_a_col),
+    // then index 1 must be cap_a_col and index 2 must be c1_col.
+    
+    // In scrub_line, if we try to set lane_scrub_cap[0] = cap_a_col, it's a contradiction because
+    // cell_not_cap_a cannot be cap_a_col. So, this placement is impossible.
+    // The clue must be placed starting at index 1.
+    // If we set lane_scrub_cap[1] = cap_a_col, then lane_scrub_cap[2] = c1_col.
+    // This seems like the expected outcome for scrub.
+    
+    // The t_scrub macro itself calls scrub_line.
+    // We need to define the clue list directly for the macro.
+    // The macro takes [$($color:expr, $count:expr);*]
+    // This means we can't directly use the pre-constructed `clues_scrub_cap` with the macro.
+    // So, we'll call scrub_line directly for this specific test case.
+    
+    scrub_line(&clues_scrub_cap, lane_scrub_cap.view_mut()).expect("Scrub line cap test failed");
+    assert_eq!(lane_scrub_cap, ndarray::arr1(&[cell_not_cap_a, cap_a_cell, c1_cell]));
+
 }
 
 #[test]
@@ -779,7 +1010,7 @@ macro_rules! t_heur {
         {
             let initial = ndarray::arr1(&[ $($state),* ]);
             scrub_heuristic(
-                &vec![ $( Clue { color: $color.unwrap_color(), count: $count} ),* ],
+                &vec![ $( Clue { color: $color.unwrap_color(), count: $count, pre_cap: None, post_cap: None } ),* ],
                 initial.rows().into_iter().next().unwrap())
         }
     };
