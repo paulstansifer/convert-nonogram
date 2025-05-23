@@ -3,7 +3,7 @@
 
 use std::u32;
 
-use crate::puzzle::{Clue, Color, Puzzle, BACKGROUND};
+use crate::puzzle::{Clue, Color, Nono, Puzzle, BACKGROUND};
 use anyhow::{bail, Context};
 use ndarray::{ArrayView1, ArrayViewMut1};
 
@@ -15,7 +15,7 @@ pub struct Cell {
 }
 
 impl Cell {
-    pub fn new(puzzle: &Puzzle) -> Cell {
+    pub fn new(puzzle: &Puzzle<impl Clue>) -> Cell {
         let mut res: u32 = 0;
         for color in puzzle.palette.keys() {
             res |= 1 << color.0
@@ -128,8 +128,8 @@ impl Cell {
     }
 }
 
-struct Arrangement<'a> {
-    cs: &'a [Clue],
+struct Arrangement<'a, C: Clue> {
+    cs: &'a [C],
     gaps: &'a [u16],
     len: u16,
 
@@ -138,8 +138,8 @@ struct Arrangement<'a> {
     overall_pos: u16,
 }
 
-impl<'a> Arrangement<'a> {
-    fn new(cs: &'a [Clue], gaps: &'a [u16], len: u16) -> Arrangement<'a> {
+impl<'a, C: Clue> Arrangement<'a, C> {
+    fn new(cs: &'a [C], gaps: &'a [u16], len: u16) -> Arrangement<'a, C> {
         Arrangement {
             cs,
             gaps,
@@ -152,7 +152,7 @@ impl<'a> Arrangement<'a> {
 }
 
 // Arrangement is itself an iterator that produces the colors of the line.
-impl Iterator for Arrangement<'_> {
+impl<'a, C: Clue> Iterator for Arrangement<'a, C> {
     type Item = Color;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -160,7 +160,7 @@ impl Iterator for Arrangement<'_> {
             return None;
         }
 
-        let clue: Clue = if self.block % 2 == 0 {
+        let clue: C = if self.block % 2 == 0 {
             // In a gap
             if self.block / 2 == self.gaps.len() {
                 // Last gap isn't explicitly represented!
@@ -168,17 +168,13 @@ impl Iterator for Arrangement<'_> {
                 self.overall_pos += 1;
                 return Some(BACKGROUND);
             } else {
-                // dummy clue for explicit background
-                Clue {
-                    color: BACKGROUND,
-                    count: self.gaps[self.block / 2],
-                }
+                C::new_solid(BACKGROUND, self.gaps[self.block / 2])
             }
         } else {
-            self.cs[(self.block - 1) / 2]
+            self.cs[(self.block - 1) / 2].clone()
         };
 
-        if self.pos_in_block >= clue.count {
+        if self.pos_in_block >= clue.len() as u16 {
             self.block += 1;
             self.pos_in_block = 0;
             return self.next(); // Oops, we were off the end!
@@ -186,7 +182,7 @@ impl Iterator for Arrangement<'_> {
         self.pos_in_block += 1;
         self.overall_pos += 1;
 
-        Some(clue.color)
+        Some(clue.color_at(self.pos_in_block as usize - 1))
     }
 }
 
@@ -239,10 +235,10 @@ impl Iterator for PossibleArrangements {
     }
 }
 
-fn bg_squares(cs: &[Clue], len: u16) -> u16 {
+fn bg_squares<C: Clue>(cs: &[C], len: u16) -> u16 {
     let mut remaining = len;
     for c in cs {
-        remaining -= c.count;
+        remaining -= c.len() as u16;
     }
     remaining
 }
@@ -287,28 +283,28 @@ fn learn_cell_not(
     Ok(())
 }
 
-struct ClueAdjIterator<'a> {
-    clues: &'a [Clue],
+struct ClueAdjIterator<'a, C: Clue> {
+    clues: &'a [C],
     i: usize,
 }
-impl<'a> ClueAdjIterator<'a> {
-    fn new(clues: &'a [Clue]) -> ClueAdjIterator<'a> {
+impl<'a, C: Clue> ClueAdjIterator<'a, C> {
+    fn new(clues: &'a [C]) -> ClueAdjIterator<'a, C> {
         ClueAdjIterator { clues, i: 0 }
     }
 }
 
-impl<'a> Iterator for ClueAdjIterator<'a> {
-    type Item = (bool, &'a Clue, bool);
+impl<'a, C: Clue> Iterator for ClueAdjIterator<'a, C> {
+    type Item = (bool, &'a C, bool);
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.i == self.clues.len() {
             return None;
         }
         let res = (
-            self.i > 0 && self.clues[self.i - 1].color == self.clues[self.i].color,
+            self.i > 0 && self.clues[self.i - 1].must_be_separated_from(&self.clues[self.i]),
             &self.clues[self.i],
             self.i < self.clues.len() - 1
-                && self.clues[self.i + 1].color == self.clues[self.i].color,
+                && self.clues[self.i + 1].must_be_separated_from(&self.clues[self.i]),
         );
         self.i += 1;
         Some(res)
@@ -317,8 +313,8 @@ impl<'a> Iterator for ClueAdjIterator<'a> {
 
 ///  For example, (1 2 1) with no other constraints gives
 ///  .] .  .  .]  .  .]
-fn packed_extents(
-    clues: &[Clue],
+fn packed_extents<C: Clue + Copy>(
+    clues: &[C],
     lane: &ArrayViewMut1<Cell>,
     reversed: bool,
 ) -> anyhow::Result<Vec<usize>> {
@@ -331,7 +327,7 @@ fn packed_extents(
             lane[idx]
         }
     };
-    let clue_at = |idx: usize| -> &Clue {
+    let clue_at = |idx: usize| -> &C {
         if reversed {
             &clues[clues.len() - 1 - idx]
         } else {
@@ -342,32 +338,34 @@ fn packed_extents(
     // -- Pack to the left (we've abstracted over `reversed`) --
 
     let mut pos = 0_usize;
-    let mut last_color = None;
+    let mut last_clue: Option<C> = None;
     for clue_idx in 0..clues.len() {
         let clue = clue_at(clue_idx);
-        if Some(clue.color) == last_color {
-            pos += 1;
+        if let Some(last_clue) = last_clue {
+            if last_clue.must_be_separated_from(clue) {
+                pos += 1;
+            }
         }
         // Scanning backwards for mismatches lets us jump farther sometimes.
         let mut placeable = false;
         while !placeable {
             placeable = true;
-            for possible_pos in (pos..(pos + clue.count as usize)).rev() {
+            for possible_pos in (pos..(pos + clue.len())).rev() {
                 if possible_pos >= lane.len() {
                     anyhow::bail!("impossible clue");
                 }
                 let cur = lane_at(possible_pos);
 
-                if !cur.can_be(clue.color) {
+                if !cur.can_be(clue.color_at(possible_pos - pos)) {
                     pos = possible_pos + 1;
                     placeable = false;
                     break;
                 }
             }
         }
-        extents.push(pos + clue.count as usize - 1);
-        pos += clue.count as usize;
-        last_color = Some(clue.color);
+        extents.push(pos + clue.len() - 1);
+        pos += clue.len();
+        last_clue = Some(*clue);
     }
 
     // TODO: pull out into a separate function!
@@ -397,7 +395,7 @@ fn packed_extents(
             //  0  1  2  3  4  5  6  7  8  9
             //                   [      #]
             // 8 - 3 = 5 is the next cell we need to examine. But we'll `-= 1` below, so add 1.
-            i = extents[cur_extent_idx] + 1 - clue_at(cur_extent_idx).count as usize;
+            i = extents[cur_extent_idx] + 1 - clue_at(cur_extent_idx).len();
             if cur_extent_idx == 0 {
                 break;
             }
@@ -421,7 +419,10 @@ fn packed_extents(
     Ok(extents)
 }
 
-pub fn skim_line(clues: &[Clue], mut lane: ArrayViewMut1<Cell>) -> anyhow::Result<ScrubReport> {
+pub fn skim_line<C: Clue + Copy>(
+    clues: &[C],
+    mut lane: ArrayViewMut1<Cell>,
+) -> anyhow::Result<ScrubReport> {
     let mut affected = Vec::<usize>::new();
     if clues.is_empty() {
         // Special case, so we can safely take the first and last clue.
@@ -444,12 +445,18 @@ pub fn skim_line(clues: &[Clue], mut lane: ArrayViewMut1<Cell>) -> anyhow::Resul
         )
     {
         for idx in (*left_extent)..=(*right_extent) {
-            learn_cell(clue.color, &mut lane, idx, &mut affected).context("overlap")?
+            learn_cell(
+                clue.color_at(idx - *left_extent),
+                &mut lane,
+                idx,
+                &mut affected,
+            )
+            .context("overlap")?
         }
 
         // TODO: this seems to still be necessary, despite the background inference below!
         // Figure out why.
-        if (*right_extent as i16 - *left_extent as i16) + 1 == clue.count as i16 {
+        if (*right_extent as i16 - *left_extent as i16) + 1 == clue.len() as i16 {
             if gap_before {
                 learn_cell(BACKGROUND, &mut lane, left_extent - 1, &mut affected).context("gb")?
             }
@@ -463,11 +470,11 @@ pub fn skim_line(clues: &[Clue], mut lane: ArrayViewMut1<Cell>) -> anyhow::Resul
     let right_packed_right_extents = right_packed_left_extents
         .iter()
         .zip(clues.iter())
-        .map(|(extent, clue)| extent + clue.count as usize - 1);
+        .map(|(extent, clue)| extent + clue.len() - 1);
     let left_packed_left_extents = left_packed_right_extents
         .iter()
         .zip(clues.iter())
-        .map(|(extent, clue)| extent + 1 - clue.count as usize);
+        .map(|(extent, clue)| extent + 1 - clue.len());
 
     // Similarly, are there squares between adjacent blocks that can't be hit (must be background)?
     // I learned you can do this from `pbnsolve`.
@@ -482,9 +489,8 @@ pub fn skim_line(clues: &[Clue], mut lane: ArrayViewMut1<Cell>) -> anyhow::Resul
         }
     }
 
-    let leftmost = left_packed_right_extents[0] as i16 - clues[0].count as i16;
-    let rightmost =
-        right_packed_left_extents.last().unwrap() + clues.last().unwrap().count as usize;
+    let leftmost = left_packed_right_extents[0] as i16 - clues[0].len() as i16;
+    let rightmost = right_packed_left_extents.last().unwrap() + clues.last().unwrap().len();
 
     for i in 0..=leftmost {
         learn_cell(BACKGROUND, &mut lane, i as usize, &mut affected).context("lopen")?
@@ -498,7 +504,7 @@ pub fn skim_line(clues: &[Clue], mut lane: ArrayViewMut1<Cell>) -> anyhow::Resul
     })
 }
 
-pub fn skim_heuristic(clues: &[Clue], lane: ArrayView1<Cell>) -> i32 {
+pub fn skim_heuristic<C: Clue>(clues: &[C], lane: ArrayView1<Cell>) -> i32 {
     if clues.is_empty() {
         return 1000; // Can solve it right away!
     }
@@ -515,9 +521,9 @@ pub fn skim_heuristic(clues: &[Clue], lane: ArrayView1<Cell>) -> i32 {
         }
     }
 
-    let total_clue_length = clues.iter().map(|c| c.count).sum::<u16>();
+    let total_clue_length = clues.iter().map(|c| c.len() as u16).sum::<u16>();
 
-    let longest_clue = clues.iter().map(|c| c.count).max().unwrap();
+    let longest_clue = clues.iter().map(|c| c.len() as u16).max().unwrap();
 
     let edge_bonus = if !lane.first().unwrap().is_known_to_be(BACKGROUND) {
         2
@@ -532,7 +538,10 @@ pub fn skim_heuristic(clues: &[Clue], lane: ArrayView1<Cell>) -> i32 {
     (total_clue_length + longest_clue) as i32 - longest_foregroundable_span + edge_bonus
 }
 
-pub fn scrub_line(cs: &[Clue], mut lane: ArrayViewMut1<Cell>) -> anyhow::Result<ScrubReport> {
+pub fn scrub_line<C: Clue + Clone + Copy>(
+    cs: &[C],
+    mut lane: ArrayViewMut1<Cell>,
+) -> anyhow::Result<ScrubReport> {
     let mut res = ScrubReport {
         affected_cells: vec![],
     };
@@ -561,21 +570,24 @@ pub fn scrub_line(cs: &[Clue], mut lane: ArrayViewMut1<Cell>) -> anyhow::Result<
     Ok(res)
 }
 
-pub fn scrub_heuristic(clues: &[Clue], lane: ArrayView1<Cell>) -> i32 {
+pub fn scrub_heuristic<C: Clue>(clues: &[C], lane: ArrayView1<Cell>) -> i32 {
     let mut foreground_cells: i32 = 0;
     // If `space_taken == lane.len()`, the line is immediately solvable with no other knowledge.
     let mut space_taken: i32 = 0;
     let mut longest_clue: i32 = 0;
-    let mut last_color = None;
+    let mut last_clue: Option<C> = None;
     for c in clues {
-        foreground_cells += c.count as i32;
-        space_taken += c.count as i32;
-        if last_color == Some(c.color) {
-            space_taken += 1;
+        foreground_cells += c.len() as i32;
+        space_taken += c.len() as i32;
+        if let Some(last_clue) = last_clue {
+            if last_clue.must_be_separated_from(c) {
+                // We need to leave a space between these clues.
+                space_taken += 1;
+            }
         }
 
-        longest_clue = std::cmp::max(longest_clue, c.count as i32);
-        last_color = Some(c.color);
+        longest_clue = std::cmp::max(longest_clue, c.len() as i32);
+        last_clue = Some(*c);
     }
     let longest_clue = longest_clue;
     let space_taken = space_taken;
@@ -621,11 +633,13 @@ pub fn scrub_heuristic(clues: &[Clue], lane: ArrayView1<Cell>) -> i32 {
 
 #[test]
 fn arrangement_test() {
+    use crate::puzzle::Nono;
+
     let w = BACKGROUND;
     let r = Color(1);
     let g = Color(2);
 
-    let clues = vec![Clue { color: r, count: 2 }, Clue { color: g, count: 3 }];
+    let clues = vec![Nono { color: r, count: 2 }, Nono { color: g, count: 3 }];
 
     let gaps_1 = vec![0, 0];
     let arr_1 = Arrangement::new(&clues, &gaps_1, 10);
@@ -672,12 +686,12 @@ fn arrange_gaps_test() {
 
 // Uses `Cell` everywhere, even in the clues, for simplicity, even though clues have to be one
 // specific_color
-macro_rules! t_scrub {
+macro_rules! n_scrub {
     ([$($color:expr, $count:expr);*] $($state:expr),*) => {
         {
             let mut initial = ndarray::arr1(&[ $($state),* ]);
             scrub_line(
-                &vec![ $( Clue { color: $color.unwrap_color(), count: $count} ),* ],
+                &vec![ $( crate::puzzle::Nono { color: $color.unwrap_color(), count: $count} ),* ],
                 initial.rows_mut().into_iter().next().unwrap())
                     .expect("impossible!");
             initial
@@ -685,12 +699,12 @@ macro_rules! t_scrub {
     };
 }
 
-macro_rules! t_skim {
+macro_rules! n_skim {
     ([$($color:expr, $count:expr);*] $($state:expr),*) => {
         {
             let mut initial = ndarray::arr1(&[ $($state),* ]);
             skim_line(
-                &vec![ $( Clue { color: $color.unwrap_color(), count: $count} ),* ],
+                &vec![ $( crate::puzzle::Nono { color: $color.unwrap_color(), count: $count} ),* ],
                 initial.rows_mut().into_iter().next().unwrap())
                     .expect("impossible!");
             initial
@@ -698,7 +712,7 @@ macro_rules! t_skim {
     };
 }
 
-macro_rules! t_line {
+macro_rules! line {
     ($($new_state:expr),*) => {
         ndarray::arr1(&[ $($new_state),* ])
     };
@@ -710,24 +724,21 @@ fn scrub_test() {
     let w = Cell::from_color(Color(0));
     let b = Cell::from_color(Color(1));
 
-    assert_eq!(t_scrub!([b, 1]  bw, bw, bw, bw), t_line!(bw, bw, bw, bw));
+    assert_eq!(n_scrub!([b, 1]  bw, bw, bw, bw), line!(bw, bw, bw, bw));
 
-    assert_eq!(t_scrub!([b, 1]  w, bw, bw, bw), t_line!(w, bw, bw, bw));
+    assert_eq!(n_scrub!([b, 1]  w, bw, bw, bw), line!(w, bw, bw, bw));
 
-    assert_eq!(t_scrub!([b, 1; b, 2]  bw, bw, bw, bw), t_line!(b, w, b, b));
+    assert_eq!(n_scrub!([b, 1; b, 2]  bw, bw, bw, bw), line!(b, w, b, b));
 
-    assert_eq!(t_scrub!([b, 1]  bw, bw, b, bw), t_line!(w, w, b, w));
+    assert_eq!(n_scrub!([b, 1]  bw, bw, b, bw), line!(w, w, b, w));
 
-    assert_eq!(t_scrub!([b, 3]  bw, bw, bw, bw), t_line!(bw, b, b, bw));
+    assert_eq!(n_scrub!([b, 3]  bw, bw, bw, bw), line!(bw, b, b, bw));
 
-    assert_eq!(
-        t_scrub!([b, 3]  bw, b, bw, bw, bw),
-        t_line!(bw, b, b, bw, w)
-    );
+    assert_eq!(n_scrub!([b, 3]  bw, b, bw, bw, bw), line!(bw, b, b, bw, w));
 
     assert_eq!(
-        t_scrub!([b, 2; b, 2]  bw, bw, bw, bw, bw),
-        t_line!(b, b, w, b, b)
+        n_scrub!([b, 2; b, 2]  bw, bw, bw, bw, bw),
+        line!(b, b, w, b, b)
     );
 
     let rbw = Cell::from_colors(&[BACKGROUND, Color(1), Color(2)]);
@@ -737,8 +748,8 @@ fn scrub_test() {
 
     // Different colors don't need separation, so we don't know as much:
     assert_eq!(
-        t_scrub!([r, 2; b, 2]  rbw, rbw, rbw, rbw, rbw),
-        t_line!(rw, r, rbw, b, bw)
+        n_scrub!([r, 2; b, 2]  rbw, rbw, rbw, rbw, rbw),
+        line!(rw, r, rbw, b, bw)
     );
 }
 
@@ -749,41 +760,43 @@ fn skim_test() {
     let b = Cell::from_color(Color(1));
     let r = Cell::from_color(Color(2));
 
-    assert_eq!(t_skim!([b, 1]  x, x, x, x), t_line!(x, x, x, x));
+    assert_eq!(n_skim!([b, 1]  x, x, x, x), line!(x, x, x, x));
 
-    assert_eq!(t_skim!([b, 1]  w, x, x, x), t_line!(w, x, x, x));
+    assert_eq!(n_skim!([b, 1]  w, x, x, x), line!(w, x, x, x));
 
-    assert_eq!(t_skim!([b, 3]  x, x, x, x), t_line!(x, b, b, x));
+    assert_eq!(n_skim!([b, 3]  x, x, x, x), line!(x, b, b, x));
 
-    assert_eq!(t_skim!([b, 2; b, 1]  x, x, x, x), t_line!(b, b, w, b));
+    assert_eq!(n_skim!([b, 2; b, 1]  x, x, x, x), line!(b, b, w, b));
 
-    assert_eq!(t_skim!([b, 1; b, 2]  x, x, x, x), t_line!(b, w, b, b));
+    assert_eq!(n_skim!([b, 1; b, 2]  x, x, x, x), line!(b, w, b, b));
 
     assert_eq!(
-        t_skim!([b, 2]  x, x, x, x, x, b, b, x),
-        t_line!(w, w, w, w, w, b, b, w)
+        n_skim!([b, 2]  x, x, x, x, x, b, b, x),
+        line!(w, w, w, w, w, b, b, w)
     );
 
-    assert_eq!(t_skim!([b, 1]  x, x, b, x), t_line!(w, w, b, w));
+    assert_eq!(n_skim!([b, 1]  x, x, b, x), line!(w, w, b, w));
 
-    assert_eq!(t_skim!([b, 3]  x, b, x, x, x), t_line!(x, b, b, x, w));
+    assert_eq!(n_skim!([b, 3]  x, b, x, x, x), line!(x, b, b, x, w));
 
-    assert_eq!(t_skim!([b, 2; b, 2]  x, x, x, x, x), t_line!(b, b, w, b, b));
+    assert_eq!(n_skim!([b, 2; b, 2]  x, x, x, x, x), line!(b, b, w, b, b));
 
     // Different colors don't need separation, so we don't know as much:
-    assert_eq!(t_skim!([r, 2; b, 2]  x, x, x, x, x), t_line!(x, r, x, b, x));
+    assert_eq!(n_skim!([r, 2; b, 2]  x, x, x, x, x), line!(x, r, x, b, x));
 }
 
-macro_rules! t_heur {
+macro_rules! heur {
     ([$($color:expr, $count:expr);*] $($state:expr),*) => {
         {
             let initial = ndarray::arr1(&[ $($state),* ]);
             scrub_heuristic(
-                &vec![ $( Clue { color: $color.unwrap_color(), count: $count} ),* ],
+                &vec![ $( crate::puzzle::Nono { color: $color.unwrap_color(), count: $count} ),* ],
                 initial.rows().into_iter().next().unwrap())
         }
     };
 }
+
+// TODO: actually test the Triano case!
 
 #[test]
 fn heuristic_examples() {
@@ -791,24 +804,24 @@ fn heuristic_examples() {
     let w = Cell::from_color(Color(0));
     let b = Cell::from_color(Color(1));
 
-    assert_eq!(t_heur!([b, 1]  x, x, x, x), 1);
-    assert_eq!(t_heur!([b, 1]  w, x, x, x), 1);
-    assert_eq!(t_heur!([b, 2]  w, w, x, x), 3);
-    assert_eq!(t_heur!([b, 1; b, 2]  x, x, x, x), 4);
-    assert_eq!(t_heur!([b, 1]  x, x, b, x), 3);
-    assert_eq!(t_heur!([b, 3]  x, x, x, x), 5);
-    assert_eq!(t_heur!([b, 3]  x, b, x, x, x), 6);
+    assert_eq!(heur!([b, 1]  x, x, x, x), 1);
+    assert_eq!(heur!([b, 1]  w, x, x, x), 1);
+    assert_eq!(heur!([b, 2]  w, w, x, x), 3);
+    assert_eq!(heur!([b, 1; b, 2]  x, x, x, x), 4);
+    assert_eq!(heur!([b, 1]  x, x, b, x), 3);
+    assert_eq!(heur!([b, 3]  x, x, x, x), 5);
+    assert_eq!(heur!([b, 3]  x, b, x, x, x), 6);
 
     assert_eq!(
-        t_heur!([b, 10]  x, x, x, x, x, x, x, x, x, x, x, x, x, x, x),
+        heur!([b, 10]  x, x, x, x, x, x, x, x, x, x, x, x, x, x, x),
         19
     );
     assert_eq!(
-        t_heur!([b, 3]  x, x, x, x, x, x, x, x, x, x, x, x, x, x, x),
+        heur!([b, 3]  x, x, x, x, x, x, x, x, x, x, x, x, x, x, x),
         5
     );
     assert_eq!(
-        t_heur!([b, 3]  x, x, x, x, b, x, x, x, x, x, x, x, x, x, x),
+        heur!([b, 3]  x, x, x, x, b, x, x, x, x, x, x, x, x, x, x),
         16
     );
 }

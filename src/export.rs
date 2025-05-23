@@ -3,14 +3,9 @@ use std::path::Path;
 use axohtml::{html, text};
 use image::{Rgb, RgbImage};
 
-use crate::puzzle::{Clue, Puzzle, Solution};
+use crate::puzzle::{Clue, Nono, Puzzle, Solution};
 
-fn style_color(c: &Clue, puzzle: &Puzzle) -> String {
-    let (r, g, b) = puzzle.palette[&c.color].rgb;
-    format!("color:rgb({},{},{})", r, g, b)
-}
-
-pub fn as_html(puzzle: &Puzzle) -> String {
+pub fn as_html<C: Clue>(puzzle: &Puzzle<C>) -> String {
     let html: axohtml::dom::DOMTree<String> = html!(
         <html>
             <head>
@@ -62,14 +57,14 @@ table td:last-child {
                         <tr>
                         <th></th>
                         { puzzle.cols.iter().map(|col| html!(<th class="col">{
-                            col.iter().map(|clue| html!(<div style=(style_color(clue, puzzle))>{text!("{} ", clue.count)} </div>))
+                            col.iter().map(|clue| html!(<div style=(clue.html_color(puzzle))>{text!("{} ", clue.html_text(puzzle))} </div>))
                         }</th>))}
                         </tr>
                     </thead>
                     <tbody>
                     {
                         puzzle.rows.iter().map(|row| html!(<tr><th class="row">{
-                            row.iter().map(|clue| html!(<span style=(style_color(clue, puzzle))>{text!("{} ", clue.count)} </span>))
+                            row.iter().map(|clue| html!(<span style=(clue.html_color(puzzle))>{text!("{} ", clue.html_text(puzzle))} </span>))
                         }</th>
                         {
                             puzzle.cols.iter().map(|_| html!(<td></td>))
@@ -85,7 +80,7 @@ table td:last-child {
     html.to_string()
 }
 
-pub fn as_webpbn(puzzle: &Puzzle) -> String {
+pub fn as_webpbn(puzzle: &Puzzle<Nono>) -> String {
     use indoc::indoc;
 
     let mut res = String::new();
@@ -139,7 +134,7 @@ pub fn as_webpbn(puzzle: &Puzzle) -> String {
     res
 }
 
-pub fn as_olsak(puzzle: &Puzzle) -> String {
+pub fn as_olsak(puzzle: &Puzzle<Nono>) -> String {
     let mut res = String::new();
     res.push_str("#d\n");
 

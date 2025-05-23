@@ -10,8 +10,8 @@ type Grid = ndarray::Array2<Cell>;
 
 pub struct Report {}
 
-pub struct LaneState<'a> {
-    clues: &'a [Clue], // just convenience, since `row` and `index` suffice to find it again
+pub struct LaneState<'a, C: Clue> {
+    clues: &'a [C], // just convenience, since `row` and `index` suffice to find it again
     row: bool,
     index: ndarray::Ix,
     scrubbed: bool,
@@ -22,12 +22,12 @@ pub struct LaneState<'a> {
     processed_skim_score: i32,
 }
 
-impl<'a> LaneState<'a> {
+impl<'a, C: Clue> LaneState<'a, C> {
     pub fn text_coord(&self) -> String {
         format!("{}{}", if self.row { "R" } else { "C" }, self.index + 1)
     }
 
-    fn new(clues: &'a [Clue], row: bool, idx: usize, grid: &Grid) -> LaneState<'a> {
+    fn new(clues: &'a [C], row: bool, idx: usize, grid: &Grid) -> LaneState<'a, C> {
         let mut res = LaneState {
             clues,
             row,
@@ -66,15 +66,18 @@ impl<'a> LaneState<'a> {
     }
 }
 
-impl std::cmp::PartialEq for LaneState<'_> {
+impl<'a, C: Clue> std::cmp::PartialEq for LaneState<'a, C> {
     fn eq(&self, other: &Self) -> bool {
         self.scrubbed == other.scrubbed && self.scrub_score == other.scrub_score
     }
 }
 
-impl std::cmp::Eq for LaneState<'_> {}
+impl<'a, C: Clue> std::cmp::Eq for LaneState<'a, C> {}
 
-fn get_mut_grid_lane<'a>(ls: &LaneState, grid: &'a mut Grid) -> ArrayViewMut1<'a, Cell> {
+fn get_mut_grid_lane<'a, C: Clue>(
+    ls: &LaneState<'a, C>,
+    grid: &'a mut Grid,
+) -> ArrayViewMut1<'a, Cell> {
     if ls.row {
         grid.row_mut(ls.index)
     } else {
@@ -82,7 +85,7 @@ fn get_mut_grid_lane<'a>(ls: &LaneState, grid: &'a mut Grid) -> ArrayViewMut1<'a
     }
 }
 
-fn get_grid_lane<'a>(ls: &LaneState, grid: &'a Grid) -> ArrayView1<'a, Cell> {
+fn get_grid_lane<'a, C: Clue>(ls: &LaneState<'a, C>, grid: &'a Grid) -> ArrayView1<'a, Cell> {
     if ls.row {
         grid.row(ls.index)
     } else {
@@ -90,10 +93,10 @@ fn get_grid_lane<'a>(ls: &LaneState, grid: &'a Grid) -> ArrayView1<'a, Cell> {
     }
 }
 
-fn find_best_lane<'a, 'b>(
-    lanes: &'b mut [LaneState<'a>],
+fn find_best_lane<'a, 'b, C: Clue>(
+    lanes: &'b mut [LaneState<'a, C>],
     to_scrub: bool,
-) -> Option<&'b mut LaneState<'a>> {
+) -> Option<&'b mut LaneState<'a, C>> {
     let mut best_score = std::i32::MIN;
     let mut res = None;
 
@@ -110,7 +113,7 @@ fn find_best_lane<'a, 'b>(
     res
 }
 
-fn print_grid(grid: &Grid, puzzle: &Puzzle) {
+fn print_grid<C: Clue>(grid: &Grid, puzzle: &Puzzle<C>) {
     for row in grid.rows() {
         for cell in row {
             match cell.known_or() {
@@ -126,18 +129,18 @@ fn print_grid(grid: &Grid, puzzle: &Puzzle) {
     }
 }
 
-fn display_step<'a>(
-    clue_lane: &'a LaneState<'a>,
+fn display_step<'a, C: Clue>(
+    clue_lane: &'a LaneState<'a, C>,
     orig_lane: Vec<Cell>,
     scrub: bool,
     grid: &'a Grid,
-    puzzle: &'a Puzzle,
+    puzzle: &'a Puzzle<C>,
 ) {
     use std::fmt::Write;
     let mut clues = String::new();
 
     for clue in clue_lane.clues {
-        write!(clues, "{}{} ", clue.count, puzzle.palette[&clue.color].ch).unwrap();
+        write!(clues, "{} ", clue.to_string(puzzle)).unwrap();
     }
 
     let r_or_c = if clue_lane.row { "R" } else { "C" };
@@ -177,7 +180,7 @@ fn display_step<'a>(
     }
 }
 
-pub fn solve(puzzle: &Puzzle, trace_solve: bool) -> anyhow::Result<Report> {
+pub fn solve<C: Clue>(puzzle: &Puzzle<C>, trace_solve: bool) -> anyhow::Result<Report> {
     let mut grid = Grid::from_elem((puzzle.rows.len(), puzzle.cols.len()), Cell::new(puzzle));
 
     let mut solve_lanes = vec![];

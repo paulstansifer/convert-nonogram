@@ -7,7 +7,7 @@ use std::{
 
 use puzzle::Clue;
 
-use crate::puzzle::{self, Color, ColorInfo, Puzzle, Solution, BACKGROUND};
+use crate::puzzle::{self, Color, ColorInfo, Nono, Puzzle, Solution, BACKGROUND};
 
 pub fn image_to_solution(image: &DynamicImage) -> Solution {
     let (width, height) = image.dimensions();
@@ -231,7 +231,7 @@ pub fn get_single_child<'a, 'input>(
     Ok(res.pop().unwrap())
 }
 
-pub fn webpbn_to_puzzle(webpbn: &str) -> Puzzle {
+pub fn webpbn_to_puzzle(webpbn: &str) -> Puzzle<Nono> {
     let doc = roxmltree::Document::parse(webpbn).unwrap();
     let puzzleset = doc.root_element();
     let puzzle = get_single_child(puzzleset, "puzzle").unwrap();
@@ -304,7 +304,7 @@ pub fn webpbn_to_puzzle(webpbn: &str) -> Puzzle {
             for lane in get_children(puzzle_part, "line").unwrap() {
                 let mut clues = vec![];
                 for block in get_children(lane, "count").unwrap() {
-                    clues.push(Clue {
+                    clues.push(Nono {
                         color: named_colors[block
                             .attribute("color")
                             .expect("Expected 'color' attribute")],
@@ -326,12 +326,12 @@ pub fn webpbn_to_puzzle(webpbn: &str) -> Puzzle {
     res
 }
 
-pub fn solution_to_puzzle(solution: &Solution) -> Puzzle {
+pub fn solution_to_puzzle(solution: &Solution) -> Puzzle<Nono> {
     let width = solution.grid.len();
     let height = solution.grid.first().unwrap().len();
 
-    let mut rows: Vec<Vec<Clue>> = Vec::new();
-    let mut cols: Vec<Vec<Clue>> = Vec::new();
+    let mut rows: Vec<Vec<Nono>> = Vec::new();
+    let mut cols: Vec<Vec<Nono>> = Vec::new();
 
     let bg_squares_found: usize = solution
         .grid
@@ -393,7 +393,7 @@ pub fn solution_to_puzzle(solution: &Solution) -> Puzzle {
 
     // Generate row clues
     for y in 0..height {
-        let mut clues = Vec::<Clue>::new();
+        let mut clues = Vec::<Nono>::new();
 
         let mut cur_color: Option<Color> = None;
         let mut run = 1;
@@ -410,7 +410,7 @@ pub fn solution_to_puzzle(solution: &Solution) -> Puzzle {
             match cur_color {
                 None => {}
                 Some(color) if color == puzzle::BACKGROUND => {}
-                Some(color) => clues.push(Clue { color, count: run }),
+                Some(color) => clues.push(Nono { color, count: run }),
             }
             cur_color = color;
             run = 1;
@@ -420,7 +420,7 @@ pub fn solution_to_puzzle(solution: &Solution) -> Puzzle {
 
     // Generate column clues
     for x in 0..width {
-        let mut clues = Vec::<Clue>::new();
+        let mut clues = Vec::<Nono>::new();
 
         let mut cur_color = None;
         let mut run = 1;
@@ -437,7 +437,7 @@ pub fn solution_to_puzzle(solution: &Solution) -> Puzzle {
             match cur_color {
                 None => {}
                 Some(color) if color == BACKGROUND => {}
-                Some(color) => clues.push(Clue { color, count: run }),
+                Some(color) => clues.push(Nono { color, count: run }),
             }
             cur_color = color;
             run = 1;

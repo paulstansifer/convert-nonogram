@@ -80,7 +80,7 @@ fn main() -> std::io::Result<()> {
         NonogramFormat::Webpbn => {
             let webpbn_string = read_path(&args.input_path);
 
-            let puzzle = webpbn_to_puzzle(&webpbn_string);
+            let puzzle: puzzle::Puzzle<puzzle::Nono> = webpbn_to_puzzle(&webpbn_string);
 
             (puzzle, None)
         }
