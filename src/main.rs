@@ -6,9 +6,12 @@ mod grid_solve;
 mod import;
 mod line_solve;
 mod puzzle;
+mod gui; // Added gui module
 use std::{io::Read, path::PathBuf};
 
 use clap::Parser;
+use crate::gui::EditorApp; // Added EditorApp import
+use eframe; // Added eframe import
 use import::webpbn_to_puzzle;
 use puzzle::{Clue, Nono, Triano};
 
@@ -61,6 +64,10 @@ struct Args {
     /// Clue style (currently only meaningful for CharGrid input)
     #[arg(long, value_enum, default_value_t)]
     clue_style: ClueStyle,
+
+    /// Launch the GUI editor
+    #[clap(long)]
+    gui: bool,
 }
 
 fn read_path(path: &PathBuf) -> String {
@@ -78,70 +85,107 @@ fn read_path(path: &PathBuf) -> String {
 fn main() -> std::io::Result<()> {
     let args = Args::parse();
 
-    let (puzzle, solution) = match args.input_format {
+    // It's important to use anyhow::Result for main when eframe is involved,
+    // or handle its Result specifically. For now, let's change main's signature
+    // and adjust the return type of this block.
+    // The original main returns std::io::Result<()>. We'll need to adapt.
+    // For simplicity, this diff won't change main's signature yet,
+    // but will use .map_err for eframe::run_native.
+
+    let (puzzle_result, solution_for_export) = match args.input_format {
         NonogramFormat::Html => {
-            panic!("HTML input is not supported.")
+            // Using anyhow::Result to make error handling more uniform
+             Err(anyhow::anyhow!("HTML input is not supported."))
         }
         NonogramFormat::Image => {
-            let img = image::open(args.input_path).unwrap();
-
-            let solution = import::image_to_solution(&img);
-
-            (
-                Nono::to_dyn(import::solution_to_puzzle(&solution)),
-                Some(solution),
-            )
+            image::open(&args.input_path)
+                .map_err(|e| anyhow::anyhow!("Failed to open image: {}", e))
+                .map(|img| {
+                    let solution = import::image_to_solution(&img);
+                    (
+                        Nono::to_dyn(import::solution_to_puzzle(&solution)),
+                        Some(solution),
+                    )
+                })
         }
         NonogramFormat::Webpbn => {
             let webpbn_string = read_path(&args.input_path);
-
-            let puzzle: puzzle::Puzzle<puzzle::Nono> = webpbn_to_puzzle(&webpbn_string);
-
-            (Nono::to_dyn(puzzle), None)
+            // webpbn_to_puzzle itself might panic or return Result, ensure it's handled.
+            // Assuming webpbn_to_puzzle returns Puzzle<Nono> directly (panics on error)
+            let puzzle_data: puzzle::Puzzle<puzzle::Nono> = webpbn_to_puzzle(&webpbn_string);
+            Ok((Nono::to_dyn(puzzle_data), None))
         }
         NonogramFormat::CharGrid => {
             let grid_string = read_path(&args.input_path);
-
             let solution = import::char_grid_to_solution(&grid_string);
-
-            let puzzle = match args.clue_style {
+            let puzzle_data = match args.clue_style {
                 ClueStyle::Nono => Nono::to_dyn(import::solution_to_puzzle(&solution)),
                 ClueStyle::Triano => Triano::to_dyn(import::solution_to_triano_puzzle(&solution)),
             };
-
-            (puzzle, Some(solution))
+            Ok((puzzle_data, Some(solution)))
         }
-        _ => todo!(),
+        _ => Err(anyhow::anyhow!("Unsupported input format combination.")),
     };
 
-    match args.output_path {
-        Some(path) => {
-            if args.output_format == NonogramFormat::Image {
-                export::emit_image(&solution.unwrap(), path).unwrap();
-            } else {
-                let output_data = match args.output_format {
-                    NonogramFormat::Olsak => export::as_olsak(&puzzle.assume_nono()),
-                    NonogramFormat::Webpbn => export::as_webpbn(&puzzle.assume_nono()),
-                    NonogramFormat::Html => export::as_html(&puzzle.assume_nono()),
-                    NonogramFormat::Image => panic!(),
-                    NonogramFormat::CharGrid => export::as_char_grid(&solution.unwrap()),
-                };
-                if path == PathBuf::from("-") {
-                    print!("{}", output_data);
+    // Handle puzzle loading result
+    let (puzzle, solution) = match puzzle_result {
+        Ok((p, s)) => (p, s),
+        Err(e) => {
+            eprintln!("Error loading puzzle: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    if args.gui {
+        let app = EditorApp::new(puzzle); // puzzle is DynPuzzle
+        let native_options = eframe::NativeOptions::default();
+        // eframe::run_native returns Result<(), eframe::Error>, map it to std::io::Error for main
+        eframe::run_native("Nonogram Editor", native_options, Box::new(|_cc| Box::new(app)))
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("Eframe error: {}", e)))?;
+    } else {
+        // Existing CLI logic
+        match args.output_path {
+            Some(path) => {
+                if args.output_format == NonogramFormat::Image {
+                    // Ensure solution is available for image export
+                    if let Some(sol) = solution {
+                        export::emit_image(&sol, path).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("Emit image error: {}", e)))?;
+                    } else {
+                        eprintln!("Error: Image output requires a solvable or direct image input.");
+                        std::process::exit(1);
+                    }
                 } else {
-                    std::fs::write(path, output_data)?;
+                    let output_data = match args.output_format {
+                        NonogramFormat::Olsak => export::as_olsak(&puzzle.clone().assume_nono()), // Clone if assume_nono consumes
+                        NonogramFormat::Webpbn => export::as_webpbn(&puzzle.clone().assume_nono()),
+                        NonogramFormat::Html => export::as_html(&puzzle.clone().assume_nono()),
+                        NonogramFormat::Image => panic!("Handled above, this branch should not be reached."),
+                        NonogramFormat::CharGrid => {
+                            if let Some(sol) = solution {
+                                export::as_char_grid(&sol)
+                            } else {
+                                eprintln!("Error: CharGrid output requires a solvable or direct image/char_grid input.");
+                                std::process::exit(1);
+                            }
+                        },
+                    };
+                    if path == PathBuf::from("-") {
+                        print!("{}", output_data);
+                    } else {
+                        std::fs::write(path, output_data)?;
+                    }
+                }
+            }
+            None => { // No output_path, solve the puzzle
+                match puzzle.solve(args.trace_solve) {
+                    Ok(_) => {} // Report is empty, success means it didn't error
+                    Err(e) => {
+                        eprintln!("Error solving puzzle: {}", e);
+                        std::process::exit(1);
+                    }
                 }
             }
         }
-
-        None => match puzzle.solve(args.trace_solve) {
-            Ok(_) => {}
-            Err(e) => {
-                eprintln!("{}", e);
-                std::process::exit(1);
-            }
-        },
     }
-
     Ok(())
 }

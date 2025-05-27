@@ -165,6 +165,7 @@ pub struct Puzzle<C: Clue> {
     pub palette: HashMap<Color, ColorInfo>, // should include the background!
     pub rows: Vec<Vec<C>>,
     pub cols: Vec<Vec<C>>,
+    pub grid: Vec<Vec<Color>>, // Added grid field
 }
 
 #[derive(Clone)]
