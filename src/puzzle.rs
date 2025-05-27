@@ -16,6 +16,8 @@ pub trait Clue: Clone + Copy + Debug {
     fn html_color(&self, puzzle: &Puzzle<Self>) -> String;
 
     fn html_text(&self, puzzle: &Puzzle<Self>) -> String;
+
+    fn to_dyn(puzzle: Puzzle<Self>) -> DynPuzzle;
 }
 
 impl Debug for Nono {
@@ -57,6 +59,10 @@ impl Clue for Nono {
 
     fn html_text(&self, _: &Puzzle<Self>) -> String {
         format!("{}", self.count)
+    }
+
+    fn to_dyn(puzzle: Puzzle<Self>) -> DynPuzzle {
+        DynPuzzle::Nono(puzzle)
     }
 }
 
@@ -116,6 +122,10 @@ impl Clue for Triano {
     fn html_text(&self, _: &Puzzle<Self>) -> String {
         unimplemented!()
     }
+
+    fn to_dyn(puzzle: Puzzle<Self>) -> DynPuzzle {
+        DynPuzzle::Triano(puzzle)
+    }
 }
 
 impl Debug for Triano {
@@ -155,4 +165,26 @@ pub struct Puzzle<C: Clue> {
     pub palette: HashMap<Color, ColorInfo>, // should include the background!
     pub rows: Vec<Vec<C>>,
     pub cols: Vec<Vec<C>>,
+}
+
+#[derive(Clone)]
+pub enum DynPuzzle {
+    Nono(Puzzle<Nono>),
+    Triano(Puzzle<Triano>),
+}
+
+impl DynPuzzle {
+    pub fn solve(&self, trace_solve: bool) -> anyhow::Result<crate::grid_solve::Report> {
+        match self {
+            DynPuzzle::Nono(puzzle) => crate::grid_solve::solve(puzzle, trace_solve),
+            DynPuzzle::Triano(puzzle) => crate::grid_solve::solve(puzzle, trace_solve),
+        }
+    }
+
+    pub fn assume_nono(self) -> Puzzle<Nono> {
+        match self {
+            DynPuzzle::Nono(puzzle) => puzzle,
+            DynPuzzle::Triano(_) => panic!("must be a true nonogram!"),
+        }
+    }
 }

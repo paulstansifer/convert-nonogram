@@ -3,7 +3,7 @@
 
 use std::u32;
 
-use crate::puzzle::{Clue, Color, Nono, Puzzle, BACKGROUND};
+use crate::puzzle::{Clue, Color, Puzzle, BACKGROUND};
 use anyhow::{bail, Context};
 use ndarray::{ArrayView1, ArrayViewMut1};
 

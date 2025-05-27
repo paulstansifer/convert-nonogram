@@ -2,12 +2,11 @@ use anyhow::bail;
 use image::{DynamicImage, GenericImageView, Pixel, Rgba};
 use std::{
     char::from_digit,
-    collections::{BTreeMap, BTreeSet, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
+    iter::FromIterator,
 };
 
-use puzzle::Clue;
-
-use crate::puzzle::{self, Color, ColorInfo, Nono, Puzzle, Solution, BACKGROUND};
+use crate::puzzle::{self, Color, ColorInfo, Nono, Puzzle, Solution, Triano, BACKGROUND};
 
 pub fn image_to_solution(image: &DynamicImage) -> Solution {
     let (width, height) = image.dimensions();
@@ -19,7 +18,7 @@ pub fn image_to_solution(image: &DynamicImage) -> Solution {
     palette.insert(
         image::Rgba::<u8>([255, 255, 255, 255]),
         ColorInfo {
-            ch: '.',
+            ch: ' ',
             name: "white".to_owned(),
             rgb: (255, 255, 255),
             color: puzzle::BACKGROUND,
@@ -38,8 +37,18 @@ pub fn image_to_solution(image: &DynamicImage) -> Solution {
                 let (r, g, b, _) = pixel.channels4();
                 let this_color = Color(next_color_idx);
 
-                next_char = (next_char as u8 + 1) as char;
                 next_color_idx += 1;
+
+                if r == 0 && g == 0 && b == 0 {
+                    return ColorInfo {
+                        ch: '◼',
+                        name: "black".to_string(),
+                        rgb: (0, 0, 0),
+                        color: this_color,
+                    };
+                }
+
+                next_char = (next_char as u8 + 1) as char;
 
                 ColorInfo {
                     ch: this_char,
@@ -326,12 +335,9 @@ pub fn webpbn_to_puzzle(webpbn: &str) -> Puzzle<Nono> {
     res
 }
 
-pub fn solution_to_puzzle(solution: &Solution) -> Puzzle<Nono> {
+fn quality_check(solution: &Solution) {
     let width = solution.grid.len();
     let height = solution.grid.first().unwrap().len();
-
-    let mut rows: Vec<Vec<Nono>> = Vec::new();
-    let mut cols: Vec<Vec<Nono>> = Vec::new();
 
     let bg_squares_found: usize = solution
         .grid
@@ -390,6 +396,152 @@ pub fn solution_to_puzzle(solution: &Solution) -> Puzzle<Nono> {
             }
         }
     }
+}
+
+pub fn solution_to_triano_puzzle(solution: &Solution) -> Puzzle<Triano> {
+    let width = solution.grid.len();
+    let height = solution.grid.first().unwrap().len();
+
+    quality_check(solution);
+
+    let lower_right_tri = HashSet::<char>::from_iter(['◢', '🮞', '◿']);
+    let lower_left_tri = HashSet::<char>::from_iter(['◣', '🮟', '◺']);
+    let upper_left_tri = HashSet::<char>::from_iter(['◤', '🮜', '◸']);
+    let upper_right_tri = HashSet::<char>::from_iter(['◥', '🮝', '◹']);
+
+    let mut front_cap_horiz = HashSet::<Color>::new();
+    let mut front_cap_vert = HashSet::<Color>::new();
+    let mut back_cap_horiz = HashSet::<Color>::new();
+    let mut back_cap_vert = HashSet::<Color>::new();
+
+    for (color, color_info) in &solution.palette {
+        let ch = color_info.ch;
+        if lower_right_tri.contains(&ch) {
+            front_cap_horiz.insert(*color);
+            front_cap_vert.insert(*color);
+        } else if lower_left_tri.contains(&ch) {
+            back_cap_horiz.insert(*color);
+            front_cap_vert.insert(*color);
+        } else if upper_left_tri.contains(&ch) {
+            back_cap_horiz.insert(*color);
+            back_cap_vert.insert(*color);
+        } else if upper_right_tri.contains(&ch) {
+            front_cap_horiz.insert(*color);
+            back_cap_vert.insert(*color);
+        }
+    }
+
+    let mut rows: Vec<Vec<Triano>> = Vec::new();
+    let mut cols: Vec<Vec<Triano>> = Vec::new();
+
+    let blank_clue = Triano {
+        front_cap: None,
+        body_color: BACKGROUND,
+        body_len: 0,
+        back_cap: None,
+    };
+
+    // Generate row clues
+    for y in 0..height {
+        let mut clues = Vec::<Triano>::new();
+        let mut cur_clue = blank_clue;
+
+        for x in 0..width {
+            let color = solution.grid[x][y];
+            if front_cap_horiz.contains(&color) {
+                // Only a blank clue can accept a front cap:
+                if cur_clue != blank_clue {
+                    clues.push(cur_clue);
+                    cur_clue = blank_clue
+                }
+                cur_clue.front_cap = Some(color);
+            } else if back_cap_horiz.contains(&color) {
+                // The back cap is always none...
+                cur_clue.back_cap = Some(color);
+                // ...because we finish right after setting it
+                clues.push(cur_clue);
+                cur_clue = blank_clue;
+            } else if color == BACKGROUND {
+                if cur_clue != blank_clue {
+                    clues.push(cur_clue);
+                    cur_clue = blank_clue;
+                }
+            } else {
+                // Since the back cap is always none, the only obstacle to continuing is if the
+                // body color is wrong.
+                if cur_clue.body_color != BACKGROUND && cur_clue.body_color != color {
+                    clues.push(cur_clue);
+                    cur_clue = blank_clue;
+                }
+                cur_clue.body_color = color;
+                cur_clue.body_len += 1;
+            }
+        }
+        if cur_clue != blank_clue {
+            clues.push(cur_clue);
+        }
+
+        rows.push(clues);
+    }
+
+    // Generate column clues
+    for x in 0..width {
+        let mut clues = Vec::<Triano>::new();
+        let mut cur_clue = blank_clue;
+
+        for y in 0..height {
+            let color = solution.grid[x][y];
+            if front_cap_vert.contains(&color) {
+                // Only a blank clue can accept a front cap:
+                if cur_clue != blank_clue {
+                    clues.push(cur_clue);
+                    cur_clue = blank_clue
+                }
+                cur_clue.front_cap = Some(color);
+            } else if back_cap_vert.contains(&color) {
+                // The back cap is always none...
+                cur_clue.back_cap = Some(color);
+                // ...because we finish right after setting it
+                clues.push(cur_clue);
+                cur_clue = blank_clue;
+            } else if color == BACKGROUND {
+                if cur_clue != blank_clue {
+                    clues.push(cur_clue);
+                    cur_clue = blank_clue;
+                }
+            } else {
+                // Since the back cap is always none, the only obstacle to continuing is if the
+                // body color is wrong.
+                if cur_clue.body_color != BACKGROUND && cur_clue.body_color != color {
+                    clues.push(cur_clue);
+                    cur_clue = blank_clue;
+                }
+                cur_clue.body_color = color;
+                cur_clue.body_len += 1;
+            }
+        }
+        if cur_clue != blank_clue {
+            clues.push(cur_clue);
+        }
+
+        cols.push(clues);
+    }
+
+    Puzzle {
+        palette: solution.palette.clone(),
+        rows,
+        cols,
+    }
+}
+
+pub fn solution_to_puzzle(solution: &Solution) -> Puzzle<Nono> {
+    let width = solution.grid.len();
+    let height = solution.grid.first().unwrap().len();
+
+    quality_check(solution);
+
+    let mut rows: Vec<Vec<Nono>> = Vec::new();
+    let mut cols: Vec<Vec<Nono>> = Vec::new();
 
     // Generate row clues
     for y in 0..height {

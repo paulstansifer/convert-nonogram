@@ -192,3 +192,17 @@ where
 
     Ok(image.save(path)?)
 }
+
+pub fn as_char_grid(solution: &Solution) -> String {
+    let mut result = String::new();
+
+    for y in 0..solution.grid[0].len() {
+        for x in 0..solution.grid.len() {
+            let color = solution.grid[x][y];
+            let color_info = &solution.palette[&color];
+            result.push(color_info.ch);
+        }
+        result.push('\n');
+    }
+    result
+}

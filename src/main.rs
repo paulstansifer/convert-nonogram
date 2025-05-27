@@ -10,6 +10,7 @@ use std::{io::Read, path::PathBuf};
 
 use clap::Parser;
 use import::webpbn_to_puzzle;
+use puzzle::{Clue, Nono, Triano};
 
 #[derive(Clone, Copy, Debug, clap::ValueEnum, Default, PartialEq, Eq)]
 enum NonogramFormat {
@@ -26,6 +27,13 @@ enum NonogramFormat {
     CharGrid,
     /// (Export-only.) An HTML representation of a puzzle.
     Html,
+}
+
+#[derive(Clone, Copy, Debug, clap::ValueEnum, Default, PartialEq, Eq)]
+enum ClueStyle {
+    #[default]
+    Nono,
+    Triano,
 }
 
 #[derive(clap::Parser, Debug)]
@@ -49,6 +57,10 @@ struct Args {
     /// Explain the solve process line-by-line.
     #[arg(short, long, action = clap::ArgAction::SetTrue)]
     trace_solve: bool,
+
+    /// Clue style (currently only meaningful for CharGrid input)
+    #[arg(long, value_enum, default_value_t)]
+    clue_style: ClueStyle,
 }
 
 fn read_path(path: &PathBuf) -> String {
@@ -75,21 +87,29 @@ fn main() -> std::io::Result<()> {
 
             let solution = import::image_to_solution(&img);
 
-            (import::solution_to_puzzle(&solution), Some(solution))
+            (
+                Nono::to_dyn(import::solution_to_puzzle(&solution)),
+                Some(solution),
+            )
         }
         NonogramFormat::Webpbn => {
             let webpbn_string = read_path(&args.input_path);
 
             let puzzle: puzzle::Puzzle<puzzle::Nono> = webpbn_to_puzzle(&webpbn_string);
 
-            (puzzle, None)
+            (Nono::to_dyn(puzzle), None)
         }
         NonogramFormat::CharGrid => {
             let grid_string = read_path(&args.input_path);
 
             let solution = import::char_grid_to_solution(&grid_string);
 
-            (import::solution_to_puzzle(&solution), Some(solution))
+            let puzzle = match args.clue_style {
+                ClueStyle::Nono => Nono::to_dyn(import::solution_to_puzzle(&solution)),
+                ClueStyle::Triano => Triano::to_dyn(import::solution_to_triano_puzzle(&solution)),
+            };
+
+            (puzzle, Some(solution))
         }
         _ => todo!(),
     };
@@ -100,13 +120,11 @@ fn main() -> std::io::Result<()> {
                 export::emit_image(&solution.unwrap(), path).unwrap();
             } else {
                 let output_data = match args.output_format {
-                    NonogramFormat::Olsak => export::as_olsak(&puzzle),
-                    NonogramFormat::Webpbn => export::as_webpbn(&puzzle),
-                    NonogramFormat::Html => export::as_html(&puzzle),
+                    NonogramFormat::Olsak => export::as_olsak(&puzzle.assume_nono()),
+                    NonogramFormat::Webpbn => export::as_webpbn(&puzzle.assume_nono()),
+                    NonogramFormat::Html => export::as_html(&puzzle.assume_nono()),
                     NonogramFormat::Image => panic!(),
-                    _ => {
-                        todo!()
-                    }
+                    NonogramFormat::CharGrid => export::as_char_grid(&solution.unwrap()),
                 };
                 if path == PathBuf::from("-") {
                     print!("{}", output_data);
@@ -116,7 +134,7 @@ fn main() -> std::io::Result<()> {
             }
         }
 
-        None => match grid_solve::solve(&puzzle, args.trace_solve) {
+        None => match puzzle.solve(args.trace_solve) {
             Ok(_) => {}
             Err(e) => {
                 eprintln!("{}", e);
