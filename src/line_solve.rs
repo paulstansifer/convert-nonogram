@@ -427,7 +427,7 @@ pub fn skim_line<C: Clue + Copy>(
     if clues.is_empty() {
         // Special case, so we can safely take the first and last clue.
         for i in 0..lane.len() {
-            learn_cell(BACKGROUND, &mut lane, i, &mut affected)?
+            learn_cell(BACKGROUND, &mut lane, i, &mut affected).context("Empty clue line")?;
         }
         return Ok(ScrubReport {
             affected_cells: affected,
@@ -458,10 +458,12 @@ pub fn skim_line<C: Clue + Copy>(
         // Figure out why.
         if (*right_extent as i16 - *left_extent as i16) + 1 == clue.len() as i16 {
             if gap_before {
-                learn_cell(BACKGROUND, &mut lane, left_extent - 1, &mut affected).context("gb")?
+                learn_cell(BACKGROUND, &mut lane, left_extent - 1, &mut affected)
+                    .context(format!("gap before: {:?}", clue))?;
             }
             if gap_after {
-                learn_cell(BACKGROUND, &mut lane, right_extent + 1, &mut affected).context("ga")?
+                learn_cell(BACKGROUND, &mut lane, right_extent + 1, &mut affected)
+                    .context(format!("gap after: {:?}", clue))?;
             }
         }
     }
@@ -485,7 +487,10 @@ pub fn skim_line<C: Clue + Copy>(
             continue;
         }
         for idx in (right_extent_prev + 1)..=(left_extent - 1) {
-            learn_cell(BACKGROUND, &mut lane, idx, &mut affected).context("empty between")?
+            learn_cell(BACKGROUND, &mut lane, idx, &mut affected).context(format!(
+                "empty between skimmed clues: idx {}, clues: {:?}",
+                idx, clues
+            ))?;
         }
     }
 
@@ -493,10 +498,11 @@ pub fn skim_line<C: Clue + Copy>(
     let rightmost = right_packed_left_extents.last().unwrap() + clues.last().unwrap().len();
 
     for i in 0..=leftmost {
-        learn_cell(BACKGROUND, &mut lane, i as usize, &mut affected).context("lopen")?
+        learn_cell(BACKGROUND, &mut lane, i as usize, &mut affected)
+            .context(format!("lopen: {}", i))?;
     }
     for i in rightmost..lane.len() {
-        learn_cell(BACKGROUND, &mut lane, i, &mut affected).context("ropen")?
+        learn_cell(BACKGROUND, &mut lane, i, &mut affected).context(format!("ropen: {}", i))?;
     }
 
     Ok(ScrubReport {
@@ -558,10 +564,11 @@ pub fn scrub_line<C: Clue + Clone + Copy>(
 
             match skim_line(cs, hypothetical_lane.view_mut()) {
                 Ok(_) => { /* no luck: no contradiction */ }
-                Err(_) => {
-                    // `color` is impossible here
+                Err(err) => {
+                    // `color` is impossible here; we've learned something!
+                    // Note that this isn't an error!
                     learn_cell_not(color, &mut lane, i, &mut res.affected_cells)
-                        .context("scrub")?;
+                        .context(format!("scrub contradiction [{}] at {}", err, i))?;
                 }
             }
         }
