@@ -239,11 +239,23 @@ pub fn solve<C: Clue>(puzzle: &Puzzle<C>, trace_solve: bool) -> anyhow::Result<R
             let report = if will_scrub {
                 best_clue_lane.scrubbed = true;
                 scrubs += 1;
-                scrub_line(best_clue_lane.clues, best_grid_lane)?
+                scrub_line(
+                    best_clue_lane.clues,
+                    best_grid_lane,
+                    best_clue_lane.row,
+                    best_clue_lane.index,
+                    puzzle,
+                )?
             } else {
                 best_clue_lane.skimmed = true;
                 skims += 1;
-                skim_line(best_clue_lane.clues, best_grid_lane)?
+                skim_line(
+                    best_clue_lane.clues,
+                    best_grid_lane,
+                    best_clue_lane.row,
+                    best_clue_lane.index,
+                    puzzle,
+                )?
             };
 
             best_clue_lane.rescore(&grid, /*was_processed=*/ true);
@@ -300,4 +312,71 @@ pub fn solve<C: Clue>(puzzle: &Puzzle<C>, trace_solve: bool) -> anyhow::Result<R
     // Not printing; we probably already know what it looks like!
 
     Ok(Report {})
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::puzzle::{Nono, Puzzle, Color, ColorInfo, BACKGROUND};
+    use crate::grid_solve::solve; // Use crate::grid_solve::solve to refer to the solve in the parent module
+    use std::collections::HashMap;
+    // use std::fmt::Write; // Not strictly needed for this test itself.
+
+    #[test]
+    fn test_contradiction_error_reporting() {
+        let mut palette = HashMap::new();
+        palette.insert(BACKGROUND, ColorInfo { ch: '.', name: "background".to_string(), rgb: (255,255,255), color: BACKGROUND, corner: None });
+        let color_a = Color(1);
+        let color_b = Color(2);
+        palette.insert(color_a, ColorInfo { ch: 'A', name: "ColorA".to_string(), rgb: (255,0,0), color: color_a, corner: None });
+        palette.insert(color_b, ColorInfo { ch: 'B', name: "ColorB".to_string(), rgb: (0,0,255), color: color_b, corner: None });
+
+        // Puzzle: 1 row, 2 columns
+        // Row 1: [A2] (Fill 2 with A)
+        // Col 1: [B1] (Fill 1 with B)
+        // Col 2: [B1] (Fill 1 with B)
+        // Contradiction: Cell (R1,C1) must be A (from row clue) and B (from col clue).
+        let puzzle = Puzzle::<Nono> {
+            palette,
+            rows: vec![
+                vec![Nono { color: color_a, count: 2 }],
+            ],
+            cols: vec![
+                vec![Nono { color: color_b, count: 1 }],
+                vec![Nono { color: color_b, count: 1 }],
+            ],
+        };
+
+        match solve(&puzzle, false) {
+            Ok(_) => panic!("Expected a contradiction, but puzzle solved."),
+            Err(e) => {
+                let error_message = e.to_string();
+                eprintln!("Caught error: {}", error_message); // For debugging test failures
+
+                // Check for core parts of the ContradictionError message
+                assert!(error_message.contains("Contradiction in"), "Error message should indicate a contradiction details.");
+                assert!(error_message.contains("Clues:"), "Error message should include clues.");
+
+                // Check for either row or column context.
+                // The exact point of detection can vary (e.g., processing R1, or C1).
+                // let mentions_row_context = error_message.contains("Row 1") && error_message.contains("A2");
+                // let mentions_col_context = error_message.contains("Column 1") && error_message.contains("B1");
+                // It could also be Column 2, cell 1, with clue B1, if R1,C1 was B and R1,C2 was A then contradiction.
+                // Or Row 1, cell 2 with clue A2 if C1 was B and C2 was B.
+
+                // Let's check if the error message contains the information from one of the possible points of contradiction
+                // For R1 (A2), if it tries to set (0,0) or (0,1)
+                // For C1 (B1), if it tries to set (0,0)
+                // For C2 (B1), if it tries to set (0,1)
+
+                let r1_clue_str = "A2"; // Nono { color: color_a, count: 2 }
+                let c1_clue_str = "B1"; // Nono { color: color_b, count: 1 }
+
+                let case1 = error_message.contains("Row 1") && error_message.contains(r1_clue_str); // Contradiction found while processing Row 1
+                let case2 = error_message.contains("Column 1") && error_message.contains(c1_clue_str); // Contradiction found while processing Col 1
+                let case3 = error_message.contains("Column 2") && error_message.contains(c1_clue_str); // Contradiction found while processing Col 2
+
+                assert!(case1 || case2 || case3, "Error message did not contain expected row/column and clue information. Message: {}", error_message);
+            }
+        }
+    }
 }

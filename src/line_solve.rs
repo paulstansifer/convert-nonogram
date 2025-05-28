@@ -3,11 +3,49 @@
 
 use std::u32;
 
-use crate::puzzle::{Clue, Color, Puzzle, BACKGROUND};
-use anyhow::{bail, Context};
+use crate::puzzle::{Clue, Color, Puzzle, ColorInfo, BACKGROUND}; // Added Puzzle, ColorInfo
 use ndarray::{ArrayView1, ArrayViewMut1};
+use std::collections::HashMap; // Added HashMap
+use std::fmt::Write; // For write! macro
 
 // type ClueSlice = Vec<Clue>;
+
+#[derive(Debug)]
+pub struct ContradictionError {
+    pub lane_is_row: bool,
+    pub lane_index: usize,
+    pub cell_index: usize, // Index of the cell within the lane where contradiction occurred
+    pub clues_string: String,
+}
+
+// Also, implement the std::error::Error trait for ContradictionError
+// and the std::fmt::Display trait to format the error message.
+
+impl std::fmt::Display for ContradictionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Contradiction in {} at index {}: cell {} (Clues: {})",
+            if self.lane_is_row { "Row" } else { "Column" },
+            self.lane_index + 1, // User-friendly 1-based indexing
+            self.cell_index + 1, // User-friendly 1-based indexing
+            self.clues_string
+        )
+    }
+}
+
+impl std::error::Error for ContradictionError {}
+
+#[derive(Debug, Clone, Copy)]
+pub struct CellBasicContradiction;
+
+impl std::fmt::Display for CellBasicContradiction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Cell input resulted in a contradiction")
+    }
+}
+
+impl std::error::Error for CellBasicContradiction {}
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Cell {
@@ -78,18 +116,18 @@ impl Cell {
     }
 
     /// Returns whether anything new was discovered (or an error if it's impossible)
-    pub fn learn(&mut self, color: Color) -> anyhow::Result<bool> {
+    pub fn learn(&mut self, color: Color) -> Result<bool, CellBasicContradiction> {
         if !self.can_be(color) {
-            bail!("learned a contradiction");
+            return Err(CellBasicContradiction);
         }
         let already_known = self.is_known();
         self.possible_color_mask = 1 << color.0;
         Ok(!already_known)
     }
 
-    pub fn learn_intersect(&mut self, possible: Cell) -> anyhow::Result<bool> {
+    pub fn learn_intersect(&mut self, possible: Cell) -> Result<bool, CellBasicContradiction> {
         if self.possible_color_mask & possible.possible_color_mask == 0 {
-            bail!("learned a contradiction");
+            return Err(CellBasicContradiction);
         }
         let orig_mask = self.possible_color_mask;
         self.possible_color_mask &= possible.possible_color_mask;
@@ -98,9 +136,9 @@ impl Cell {
     }
 
     /// Returns whether anything new was discovered (or an error if it's impossible)
-    pub fn learn_that_not(&mut self, color: Color) -> anyhow::Result<bool> {
+    pub fn learn_that_not(&mut self, color: Color) -> Result<bool, CellBasicContradiction> {
         if self.is_known_to_be(color) {
-            bail!("learned a contradiction");
+            return Err(CellBasicContradiction);
         }
         let already_known = !self.can_be(color);
         self.possible_color_mask &= !(1 << color.0);
@@ -252,7 +290,7 @@ fn learn_cell(
     lane: &mut ArrayViewMut1<Cell>,
     idx: usize,
     affected_cells: &mut Vec<usize>,
-) -> anyhow::Result<()> {
+) -> Result<(), CellBasicContradiction> {
     if lane[idx].learn(color)? {
         affected_cells.push(idx);
     }
@@ -264,7 +302,7 @@ fn learn_cell_intersect(
     lane: &mut ArrayViewMut1<Cell>,
     idx: usize,
     affected_cells: &mut Vec<usize>,
-) -> anyhow::Result<()> {
+) -> Result<(), CellBasicContradiction> {
     if lane[idx].learn_intersect(possibilities)? {
         affected_cells.push(idx);
     }
@@ -276,7 +314,7 @@ fn learn_cell_not(
     lane: &mut ArrayViewMut1<Cell>,
     idx: usize,
     affected_cells: &mut Vec<usize>,
-) -> anyhow::Result<()> {
+) -> Result<(), CellBasicContradiction> {
     if lane[idx].learn_that_not(color)? {
         affected_cells.push(idx);
     }
@@ -422,20 +460,57 @@ fn packed_extents<C: Clue + Copy>(
 pub fn skim_line<C: Clue + Copy>(
     clues: &[C],
     mut lane: ArrayViewMut1<Cell>,
-) -> anyhow::Result<ScrubReport> {
+    lane_is_row: bool,
+    lane_index: usize,
+    puzzle: &Puzzle<C>,
+) -> Result<ScrubReport, ContradictionError> {
     let mut affected = Vec::<usize>::new();
     if clues.is_empty() {
         // Special case, so we can safely take the first and last clue.
         for i in 0..lane.len() {
-            learn_cell(BACKGROUND, &mut lane, i, &mut affected)?
+            learn_cell(BACKGROUND, &mut lane, i, &mut affected)
+                .map_err(|_cell_err| {
+                    let mut clues_string = String::new();
+                    // Clues are empty here, so clues_string will be empty.
+                    ContradictionError {
+                        lane_is_row,
+                        lane_index,
+                        cell_index: i,
+                        clues_string: clues_string.trim().to_string(),
+                    }
+                })?
         }
         return Ok(ScrubReport {
             affected_cells: affected,
         });
     }
 
-    let left_packed_right_extents = packed_extents(clues, &lane, false)?;
-    let right_packed_left_extents = packed_extents(clues, &lane, true)?;
+    let left_packed_right_extents = packed_extents(clues, &lane, false)
+            .map_err(|_err| { // Assuming _err is anyhow::Error from "impossible clue"
+                let mut clues_string = String::new();
+                for clue in clues {
+                    write!(clues_string, "{} ", clue.to_string(puzzle)).unwrap();
+                }
+                ContradictionError {
+                    lane_is_row,
+                    lane_index,
+                    cell_index: 0, // Placeholder for cell_index from packed_extents
+                    clues_string: clues_string.trim().to_string(),
+                }
+            })?;
+    let right_packed_left_extents = packed_extents(clues, &lane, true)
+            .map_err(|_err| { // Assuming _err is anyhow::Error from "impossible clue"
+                let mut clues_string = String::new();
+                for clue in clues {
+                    write!(clues_string, "{} ", clue.to_string(puzzle)).unwrap();
+                }
+                ContradictionError {
+                    lane_is_row,
+                    lane_index,
+                    cell_index: 0, // Placeholder for cell_index from packed_extents
+                    clues_string: clues_string.trim().to_string(),
+                }
+            })?;
 
     for ((gap_before, clue, gap_after), (left_extent, right_extent)) in ClueAdjIterator::new(clues)
         .zip(
@@ -451,17 +526,52 @@ pub fn skim_line<C: Clue + Copy>(
                 idx,
                 &mut affected,
             )
-            .context("overlap")?
+            .map_err(|_cell_err| {
+                let mut clues_string = String::new();
+                for c_item in clues {
+                    write!(clues_string, "{} ", c_item.to_string(puzzle)).unwrap();
+                }
+                ContradictionError {
+                    lane_is_row,
+                    lane_index,
+                    cell_index: idx,
+                    clues_string: clues_string.trim().to_string(),
+                }
+            })?
         }
 
         // TODO: this seems to still be necessary, despite the background inference below!
         // Figure out why.
         if (*right_extent as i16 - *left_extent as i16) + 1 == clue.len() as i16 {
             if gap_before {
-                learn_cell(BACKGROUND, &mut lane, left_extent - 1, &mut affected).context("gb")?
+                learn_cell(BACKGROUND, &mut lane, left_extent - 1, &mut affected)
+                    .map_err(|_cell_err| {
+                        let mut clues_string = String::new();
+                        for c_item in clues {
+                            write!(clues_string, "{} ", c_item.to_string(puzzle)).unwrap();
+                        }
+                        ContradictionError {
+                            lane_is_row,
+                            lane_index,
+                            cell_index: left_extent - 1,
+                            clues_string: clues_string.trim().to_string(),
+                        }
+                    })?
             }
             if gap_after {
-                learn_cell(BACKGROUND, &mut lane, right_extent + 1, &mut affected).context("ga")?
+                learn_cell(BACKGROUND, &mut lane, right_extent + 1, &mut affected)
+                    .map_err(|_cell_err| {
+                        let mut clues_string = String::new();
+                        for c_item in clues {
+                            write!(clues_string, "{} ", c_item.to_string(puzzle)).unwrap();
+                        }
+                        ContradictionError {
+                            lane_is_row,
+                            lane_index,
+                            cell_index: right_extent + 1,
+                            clues_string: clues_string.trim().to_string(),
+                        }
+                    })?
             }
         }
     }
@@ -485,7 +595,19 @@ pub fn skim_line<C: Clue + Copy>(
             continue;
         }
         for idx in (right_extent_prev + 1)..=(left_extent - 1) {
-            learn_cell(BACKGROUND, &mut lane, idx, &mut affected).context("empty between")?
+            learn_cell(BACKGROUND, &mut lane, idx, &mut affected)
+                .map_err(|_cell_err| {
+                    let mut clues_string = String::new();
+                    for c_item in clues {
+                        write!(clues_string, "{} ", c_item.to_string(puzzle)).unwrap();
+                    }
+                    ContradictionError {
+                        lane_is_row,
+                        lane_index,
+                        cell_index: idx,
+                        clues_string: clues_string.trim().to_string(),
+                    }
+                })?
         }
     }
 
@@ -493,10 +615,34 @@ pub fn skim_line<C: Clue + Copy>(
     let rightmost = right_packed_left_extents.last().unwrap() + clues.last().unwrap().len();
 
     for i in 0..=leftmost {
-        learn_cell(BACKGROUND, &mut lane, i as usize, &mut affected).context("lopen")?
+        learn_cell(BACKGROUND, &mut lane, i as usize, &mut affected)
+            .map_err(|_cell_err| {
+                let mut clues_string = String::new();
+                for c_item in clues {
+                    write!(clues_string, "{} ", c_item.to_string(puzzle)).unwrap();
+                }
+                ContradictionError {
+                    lane_is_row,
+                    lane_index,
+                    cell_index: i as usize,
+                    clues_string: clues_string.trim().to_string(),
+                }
+            })?
     }
     for i in rightmost..lane.len() {
-        learn_cell(BACKGROUND, &mut lane, i, &mut affected).context("ropen")?
+        learn_cell(BACKGROUND, &mut lane, i, &mut affected)
+            .map_err(|_cell_err| {
+                let mut clues_string = String::new();
+                for c_item in clues {
+                    write!(clues_string, "{} ", c_item.to_string(puzzle)).unwrap();
+                }
+                ContradictionError {
+                    lane_is_row,
+                    lane_index,
+                    cell_index: i,
+                    clues_string: clues_string.trim().to_string(),
+                }
+            })?
     }
 
     Ok(ScrubReport {
@@ -539,9 +685,12 @@ pub fn skim_heuristic<C: Clue>(clues: &[C], lane: ArrayView1<Cell>) -> i32 {
 }
 
 pub fn scrub_line<C: Clue + Clone + Copy>(
-    cs: &[C],
+    cs: &[C], // (was clues)
     mut lane: ArrayViewMut1<Cell>,
-) -> anyhow::Result<ScrubReport> {
+    lane_is_row: bool,
+    lane_index: usize,
+    puzzle: &Puzzle<C>,
+) -> Result<ScrubReport, ContradictionError> {
     let mut res = ScrubReport {
         affected_cells: vec![],
     };
@@ -556,12 +705,25 @@ pub fn scrub_line<C: Clue + Clone + Copy>(
 
             hypothetical_lane[i] = Cell::from_color(color);
 
-            match skim_line(cs, hypothetical_lane.view_mut()) {
+            match skim_line(cs, hypothetical_lane.view_mut(), lane_is_row, lane_index, puzzle) {
                 Ok(_) => { /* no luck: no contradiction */ }
-                Err(_) => {
-                    // `color` is impossible here
+                Err(_e) => { // e is ContradictionError from the hypothetical skim
+                    // This means `color` is impossible for `lane[i]`.
+                    // We need to learn_that_not and if that causes a CellBasicContradiction,
+                    // then map *that* to a ContradictionError for the current state of `lane` at `i`.
                     learn_cell_not(color, &mut lane, i, &mut res.affected_cells)
-                        .context("scrub")?;
+                        .map_err(|_cell_err| {
+                            let mut clues_string = String::new();
+                            for clue_item in cs { // Iterate over cs (clues for scrub_line)
+                                write!(clues_string, "{} ", clue_item.to_string(puzzle)).unwrap();
+                            }
+                            ContradictionError {
+                                lane_is_row,
+                                lane_index,
+                                cell_index: i, // current cell index in scrub_line
+                                clues_string: clues_string.trim().to_string(),
+                            }
+                        })?;
                 }
             }
         }
