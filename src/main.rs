@@ -154,9 +154,22 @@ fn main() -> std::io::Result<()> {
         }
 
         None => match puzzle.solve(args.trace_solve) {
-            Ok(_) => {}
+            Ok(grid_solve::Report {
+                skims,
+                scrubs,
+                cells_left,
+            }) => {
+                if cells_left == 0 {
+                    eprintln!("Solved after {} skims and {} scrubs.", skims, scrubs);
+                } else {
+                    eprintln!(
+                        "Unable to solve. Performed {} skims, {} scrubs; {} cells left.",
+                        skims, scrubs, cells_left
+                    );
+                }
+            }
             Err(e) => {
-                eprintln!("{}", e);
+                eprintln!("Error: {:?}", e);
                 std::process::exit(1);
             }
         },

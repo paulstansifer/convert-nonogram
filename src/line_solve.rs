@@ -451,7 +451,7 @@ pub fn skim_line<C: Clue + Copy>(
                 idx,
                 &mut affected,
             )
-            .context("overlap")?
+            .context(format!("overlap: clue {:?} at {}", clue, idx))?
         }
 
         // TODO: this seems to still be necessary, despite the background inference below!

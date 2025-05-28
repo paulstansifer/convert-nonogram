@@ -1,3 +1,6 @@
+use std::fmt::Debug;
+
+use anyhow::Context;
 use colored::Colorize;
 use ndarray::{ArrayView1, ArrayViewMut1};
 
@@ -8,7 +11,11 @@ use crate::{
 
 type Grid = ndarray::Array2<Cell>;
 
-pub struct Report {}
+pub struct Report {
+    pub skims: usize,
+    pub scrubs: usize,
+    pub cells_left: usize,
+}
 
 pub struct LaneState<'a, C: Clue> {
     clues: &'a [C], // just convenience, since `row` and `index` suffice to find it again
@@ -20,6 +27,18 @@ pub struct LaneState<'a, C: Clue> {
     skimmed: bool,
     skim_score: i32,
     processed_skim_score: i32,
+}
+
+impl<C: Clue> Debug for LaneState<'_, C> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}{}: {:?}",
+            if self.row { "R" } else { "C" },
+            self.index + 1,
+            self.clues
+        )
+    }
 }
 
 impl<'a, C: Clue> LaneState<'a, C> {
@@ -213,9 +232,11 @@ pub fn solve<C: Clue>(puzzle: &Puzzle<C>, trace_solve: bool) -> anyhow::Result<R
                 None => {
                     if will_scrub {
                         print_grid(&grid, puzzle);
-                        anyhow::bail!(
-                            "Unable to line-solve after {skims} skims and {scrubs} scrubs!"
-                        );
+                        return Ok(Report {
+                            skims,
+                            scrubs,
+                            cells_left,
+                        });
                     } else {
                         allowed_skims = 0; // Try again, but scrub.
                         continue;
@@ -239,11 +260,13 @@ pub fn solve<C: Clue>(puzzle: &Puzzle<C>, trace_solve: bool) -> anyhow::Result<R
             let report = if will_scrub {
                 best_clue_lane.scrubbed = true;
                 scrubs += 1;
-                scrub_line(best_clue_lane.clues, best_grid_lane)?
+                scrub_line(best_clue_lane.clues, best_grid_lane)
+                    .context(format!("scrubbing {:?}", best_clue_lane))?
             } else {
                 best_clue_lane.skimmed = true;
                 skims += 1;
-                skim_line(best_clue_lane.clues, best_grid_lane)?
+                skim_line(best_clue_lane.clues, best_grid_lane)
+                    .context(format!("skimming {:?}", best_clue_lane))?
             };
 
             best_clue_lane.rescore(&grid, /*was_processed=*/ true);
@@ -273,8 +296,11 @@ pub fn solve<C: Clue>(puzzle: &Puzzle<C>, trace_solve: bool) -> anyhow::Result<R
 
         if cells_left == 0 {
             progress.finish_and_clear();
-            println!("Solved in {skims} skims, {scrubs} scrubs.");
-            break;
+            return Ok(Report {
+                skims,
+                scrubs,
+                cells_left,
+            });
         }
 
         if will_scrub {
@@ -298,6 +324,4 @@ pub fn solve<C: Clue>(puzzle: &Puzzle<C>, trace_solve: bool) -> anyhow::Result<R
     }
 
     // Not printing; we probably already know what it looks like!
-
-    Ok(Report {})
 }
