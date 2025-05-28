@@ -115,12 +115,23 @@ impl Clue for Triano {
         res
     }
 
-    fn html_color(&self, _: &Puzzle<Self>) -> String {
-        unimplemented!()
+    fn html_color(&self, puzzle: &Puzzle<Self>) -> String {
+        let (r, g, b) = puzzle.palette[&self.body_color].rgb;
+        format!("color:rgb({},{},{})", r, g, b)
     }
 
-    fn html_text(&self, _: &Puzzle<Self>) -> String {
-        unimplemented!()
+    fn html_text(&self, puzzle: &Puzzle<Self>) -> String {
+        let mut res = String::new();
+        if let Some(front_cap) = self.front_cap {
+            let color_info = &puzzle.palette[&front_cap];
+            res.push(color_info.ch);
+        }
+        res.push_str(&self.body_len.to_string());
+        if let Some(back_cap) = self.back_cap {
+            let color_info = &puzzle.palette[&back_cap];
+            res.push(color_info.ch);
+        }
+        res
     }
 
     fn to_dyn(puzzle: Puzzle<Self>) -> DynPuzzle {
@@ -146,12 +157,22 @@ pub struct Color(pub u8);
 
 pub static BACKGROUND: Color = Color(0);
 
+// A triangle-shaped half of a square. `true` means solid in the given direction.
+#[derive(PartialEq, Eq, Clone, Copy, Debug)]
+pub struct Corner {
+    pub upper: bool,
+    pub left: bool,
+}
+
+// Note that `rgb` is not necessarily unique!
+// But `ch` and `name` ought to be, along with `rgb` + `corner`.
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct ColorInfo {
     pub ch: char,
     pub name: String,
     pub rgb: (u8, u8, u8),
     pub color: Color,
+    pub corner: Option<Corner>,
 }
 
 #[derive(Clone)]

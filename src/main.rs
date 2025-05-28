@@ -122,7 +122,7 @@ fn main() -> std::io::Result<()> {
                 let output_data = match args.output_format {
                     NonogramFormat::Olsak => export::as_olsak(&puzzle.assume_nono()),
                     NonogramFormat::Webpbn => export::as_webpbn(&puzzle.assume_nono()),
-                    NonogramFormat::Html => export::as_html(&puzzle.assume_nono()),
+                        puzzle::DynPuzzle::Triano(p) => export::as_html(&p),
                     NonogramFormat::Image => panic!(),
                     NonogramFormat::CharGrid => export::as_char_grid(&solution.unwrap()),
                 };

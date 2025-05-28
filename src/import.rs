@@ -6,7 +6,7 @@ use std::{
     iter::FromIterator,
 };
 
-use crate::puzzle::{self, Color, ColorInfo, Nono, Puzzle, Solution, Triano, BACKGROUND};
+use crate::puzzle::{self, Color, ColorInfo, Corner, Nono, Puzzle, Solution, Triano, BACKGROUND};
 
 pub fn image_to_solution(image: &DynamicImage) -> Solution {
     let (width, height) = image.dimensions();
@@ -22,6 +22,7 @@ pub fn image_to_solution(image: &DynamicImage) -> Solution {
             name: "white".to_owned(),
             rgb: (255, 255, 255),
             color: puzzle::BACKGROUND,
+            corner: None,
         },
     );
 
@@ -45,6 +46,7 @@ pub fn image_to_solution(image: &DynamicImage) -> Solution {
                         name: "black".to_string(),
                         rgb: (0, 0, 0),
                         color: this_color,
+                        corner: None,
                     };
                 }
 
@@ -55,6 +57,7 @@ pub fn image_to_solution(image: &DynamicImage) -> Solution {
                     name: format!("{}{}", this_char, format!("{:02X}{:02X}{:02X}", r, g, b)),
                     rgb: (r, g, b),
                     color: this_color,
+                    corner: None,
                 }
             });
 
@@ -108,6 +111,7 @@ pub fn char_grid_to_solution(char_grid: &str) -> Solution {
             name: "white".to_string(),
             rgb: (255, 255, 255),
             color: BACKGROUND,
+            corner: None,
         },
     );
     unused_chars.remove(&bg_ch);
@@ -124,6 +128,7 @@ pub fn char_grid_to_solution(char_grid: &str) -> Solution {
                     name: "black".to_string(),
                     rgb: (0, 0, 0),
                     color: Color(next_color),
+                    corner: None,
                 },
             );
             next_color += 1;
@@ -131,6 +136,16 @@ pub fn char_grid_to_solution(char_grid: &str) -> Solution {
             break;
         }
     }
+
+    let lower_right_tri = HashSet::<char>::from_iter(['◢', '🮞', '◿']);
+    let lower_left_tri = HashSet::<char>::from_iter(['◣', '🮟', '◺']);
+    let upper_left_tri = HashSet::<char>::from_iter(['◤', '🮜', '◸']);
+    let upper_right_tri = HashSet::<char>::from_iter(['◥', '🮝', '◹']);
+    let mut any_tri = HashSet::<char>::new();
+    any_tri.extend(lower_right_tri.iter());
+    any_tri.extend(lower_left_tri.iter());
+    any_tri.extend(upper_left_tri.iter());
+    any_tri.extend(upper_right_tri.iter());
 
     // By default, use primary and secondary colors:
     let mut unused_colors = BTreeMap::<char, (u8, u8, u8)>::new();
@@ -167,6 +182,14 @@ pub fn char_grid_to_solution(char_grid: &str) -> Solution {
                 name: ch.to_string(),
                 rgb,
                 color: Color(next_color),
+                corner: if any_tri.contains(&ch) {
+                    Some(Corner {
+                        upper: upper_left_tri.contains(&ch) || upper_right_tri.contains(&ch),
+                        left: lower_left_tri.contains(&ch) || upper_left_tri.contains(&ch),
+                    })
+                } else {
+                    None
+                },
             },
         );
         next_color += 1;
@@ -295,6 +318,7 @@ pub fn webpbn_to_puzzle(webpbn: &str) -> Puzzle<Nono> {
                 name: color_name.to_string(),
                 rgb: (r, g, b),
                 color: color,
+                corner: None, // webpbn isn't intended to represent Triano clues
             };
 
             res.palette.insert(color, color_info);
@@ -404,33 +428,6 @@ pub fn solution_to_triano_puzzle(solution: &Solution) -> Puzzle<Triano> {
 
     quality_check(solution);
 
-    let lower_right_tri = HashSet::<char>::from_iter(['◢', '🮞', '◿']);
-    let lower_left_tri = HashSet::<char>::from_iter(['◣', '🮟', '◺']);
-    let upper_left_tri = HashSet::<char>::from_iter(['◤', '🮜', '◸']);
-    let upper_right_tri = HashSet::<char>::from_iter(['◥', '🮝', '◹']);
-
-    let mut front_cap_horiz = HashSet::<Color>::new();
-    let mut front_cap_vert = HashSet::<Color>::new();
-    let mut back_cap_horiz = HashSet::<Color>::new();
-    let mut back_cap_vert = HashSet::<Color>::new();
-
-    for (color, color_info) in &solution.palette {
-        let ch = color_info.ch;
-        if lower_right_tri.contains(&ch) {
-            front_cap_horiz.insert(*color);
-            front_cap_vert.insert(*color);
-        } else if lower_left_tri.contains(&ch) {
-            back_cap_horiz.insert(*color);
-            front_cap_vert.insert(*color);
-        } else if upper_left_tri.contains(&ch) {
-            back_cap_horiz.insert(*color);
-            back_cap_vert.insert(*color);
-        } else if upper_right_tri.contains(&ch) {
-            front_cap_horiz.insert(*color);
-            back_cap_vert.insert(*color);
-        }
-    }
-
     let mut rows: Vec<Vec<Triano>> = Vec::new();
     let mut cols: Vec<Vec<Triano>> = Vec::new();
 
@@ -441,6 +438,13 @@ pub fn solution_to_triano_puzzle(solution: &Solution) -> Puzzle<Triano> {
         back_cap: None,
     };
 
+    let mut palette = solution.palette.clone();
+
+    // Let's assume triano clues are black-and-white
+    for (_, color_info) in &mut palette {
+        color_info.rgb = (0, 0, 0);
+    }
+
     // Generate row clues
     for y in 0..height {
         let mut clues = Vec::<Triano>::new();
@@ -448,14 +452,17 @@ pub fn solution_to_triano_puzzle(solution: &Solution) -> Puzzle<Triano> {
 
         for x in 0..width {
             let color = solution.grid[x][y];
-            if front_cap_horiz.contains(&color) {
+            let color_info = &solution.palette[&color];
+
+            // For example `!left` means ◢ or ◥:
+            if color_info.corner.is_some_and(|c| !c.left) {
                 // Only a blank clue can accept a front cap:
                 if cur_clue != blank_clue {
                     clues.push(cur_clue);
                     cur_clue = blank_clue
                 }
                 cur_clue.front_cap = Some(color);
-            } else if back_cap_horiz.contains(&color) {
+            } else if color_info.corner.is_some_and(|c| c.left) {
                 // The back cap is always none...
                 cur_clue.back_cap = Some(color);
                 // ...because we finish right after setting it
@@ -491,14 +498,16 @@ pub fn solution_to_triano_puzzle(solution: &Solution) -> Puzzle<Triano> {
 
         for y in 0..height {
             let color = solution.grid[x][y];
-            if front_cap_vert.contains(&color) {
+            let color_info = &solution.palette[&color];
+
+            if color_info.corner.is_some_and(|c| !c.upper) {
                 // Only a blank clue can accept a front cap:
                 if cur_clue != blank_clue {
                     clues.push(cur_clue);
                     cur_clue = blank_clue
                 }
                 cur_clue.front_cap = Some(color);
-            } else if back_cap_vert.contains(&color) {
+            } else if color_info.corner.is_some_and(|c| c.upper) {
                 // The back cap is always none...
                 cur_clue.back_cap = Some(color);
                 // ...because we finish right after setting it
@@ -528,7 +537,7 @@ pub fn solution_to_triano_puzzle(solution: &Solution) -> Puzzle<Triano> {
     }
 
     Puzzle {
-        palette: solution.palette.clone(),
+        palette,
         rows,
         cols,
     }
