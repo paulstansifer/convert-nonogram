@@ -1,22 +1,24 @@
-use egui::{Color32, Frame, PointerState, Pos2, Rect, RichText, Shape, Style, Vec2, Visuals};
+use egui::{Color32, Frame, Pos2, Rect, RichText, Shape, Style, Vec2, Visuals};
 
 use crate::{
     grid_solve,
     import::{solution_to_puzzle, solution_to_triano_puzzle},
-    puzzle::{Clue, Color, ColorInfo, Corner, Nono, Puzzle, Solution, Triano, BACKGROUND},
+    puzzle::{Clue, Color, ColorInfo, Corner, Nono, Solution, Triano, BACKGROUND},
+    ClueStyle,
 };
 
 struct MyEguiApp {
     picture: Solution,
     current_color: Color,
     scale: f32,
+    clue_style: ClueStyle,
     auto_solve: bool,
     solve_report: String,
     report_stale: bool,
 }
 
 impl MyEguiApp {
-    fn new(cc: &eframe::CreationContext<'_>, picture: Solution) -> Self {
+    fn new(cc: &eframe::CreationContext<'_>, picture: Solution, clue_style: ClueStyle) -> Self {
         // Customize egui here with cc.egui_ctx.set_fonts and cc.egui_ctx.set_visuals.
         // Restore app state using cc.storage (requires the "persistence" feature).
         // Use the cc.gl (a glow::Context) to create graphics shaders and buffers that you can use
@@ -25,6 +27,7 @@ impl MyEguiApp {
             picture,
             current_color: BACKGROUND,
             scale: 10.0,
+            clue_style,
             auto_solve: false,
             solve_report: "".to_string(),
             report_stale: true,
@@ -121,21 +124,23 @@ impl eframe::App for MyEguiApp {
                             }
                         });
                     }
-                    let mut triano = false;
-                    ui.checkbox(&mut triano, "Trianogram");
                     ui.checkbox(&mut self.auto_solve, "auto-solve");
                     if ui.button("Solve").clicked() || (self.auto_solve && self.report_stale) {
-                        let puzzle = if triano {
+                        let puzzle = if self.clue_style == ClueStyle::Triano {
                             Triano::to_dyn(solution_to_triano_puzzle(&self.picture))
                         } else {
                             Nono::to_dyn(solution_to_puzzle(&self.picture))
                         };
 
                         match puzzle.solve(false) {
-                            Ok(report) => {
-                                self.solve_report = "ok".to_string();
+                            Ok(grid_solve::Report {
+                                skims,
+                                scrubs,
+                                cells_left,
+                            }) => {
+                                self.solve_report = format!("{}/{}/{}", skims, scrubs, cells_left);
                             }
-                            Err(e) => self.solve_report = format!("Error solving puzzle: {}", e),
+                            Err(e) => self.solve_report = format!("Error: {:?}", e),
                         }
                         self.report_stale = false;
                     }
@@ -211,7 +216,7 @@ impl eframe::App for MyEguiApp {
     }
 }
 
-pub fn edit_image(puzzle: &mut Solution) {
+pub fn edit_image(puzzle: &mut Solution, clue_style: ClueStyle) {
     let native_options = eframe::NativeOptions::default();
     eframe::run_native(
         "Puzzle Editor",
@@ -222,8 +227,8 @@ pub fn edit_image(puzzle: &mut Solution) {
                 ..Style::default()
             };
             cc.egui_ctx.set_style(style);
-            Ok(Box::new(MyEguiApp::new(cc, puzzle.clone())))
+            Ok(Box::new(MyEguiApp::new(cc, puzzle.clone(), clue_style)))
         }),
     )
-    .unwrap();
+    .unwrap()
 }

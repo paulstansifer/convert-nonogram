@@ -22,7 +22,7 @@ pub trait Clue: Clone + Copy + Debug {
 
 impl Debug for Nono {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}{}", self.color.0, self.count)
+        write!(f, "[{}]{}", self.color.0, self.count)
     }
 }
 
@@ -142,11 +142,11 @@ impl Clue for Triano {
 impl Debug for Triano {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Some(front_cap) = self.front_cap {
-            write!(f, "{}", front_cap.0)?;
+            write!(f, "[{}]", front_cap.0)?;
         }
-        write!(f, "{}{}", self.body_color.0, self.body_len)?;
+        write!(f, "[{}]{}", self.body_color.0, self.body_len)?;
         if let Some(back_cap) = self.back_cap {
-            write!(f, "{}", back_cap.0)?;
+            write!(f, "[{}]", back_cap.0)?;
         }
         Ok(())
     }

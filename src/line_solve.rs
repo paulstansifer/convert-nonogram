@@ -1,7 +1,7 @@
 // They're used in tests, but it can't see that.
 #![allow(unused_macros, dead_code)]
 
-use std::u32;
+use std::{fmt::Debug, u32};
 
 use crate::puzzle::{Clue, Color, Puzzle, BACKGROUND};
 use anyhow::{bail, Context};
@@ -9,9 +9,19 @@ use ndarray::{ArrayView1, ArrayViewMut1};
 
 // type ClueSlice = Vec<Clue>;
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Cell {
     possible_color_mask: u32,
+}
+
+impl Debug for Cell {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.is_known() {
+            write!(f, "[{}]", self.unwrap_color().0)
+        } else {
+            write!(f, "<{:08b}>", self.possible_color_mask)
+        }
+    }
 }
 
 impl Cell {

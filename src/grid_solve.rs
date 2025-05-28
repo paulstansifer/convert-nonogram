@@ -260,13 +260,17 @@ pub fn solve<C: Clue>(puzzle: &Puzzle<C>, trace_solve: bool) -> anyhow::Result<R
             let report = if will_scrub {
                 best_clue_lane.scrubbed = true;
                 scrubs += 1;
-                scrub_line(best_clue_lane.clues, best_grid_lane)
-                    .context(format!("scrubbing {:?}", best_clue_lane))?
+                scrub_line(best_clue_lane.clues, best_grid_lane).context(format!(
+                    "scrubbing {:?} with {:?}",
+                    best_clue_lane, orig_version_of_line
+                ))?
             } else {
                 best_clue_lane.skimmed = true;
                 skims += 1;
-                skim_line(best_clue_lane.clues, best_grid_lane)
-                    .context(format!("skimming {:?}", best_clue_lane))?
+                skim_line(best_clue_lane.clues, best_grid_lane).context(format!(
+                    "skimming {:?} with {:?}",
+                    best_clue_lane, orig_version_of_line
+                ))?
             };
 
             best_clue_lane.rescore(&grid, /*was_processed=*/ true);

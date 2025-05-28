@@ -126,7 +126,7 @@ fn main() -> std::io::Result<()> {
     };
 
     if args.gui {
-        gui::edit_image(&mut solution.unwrap());
+        gui::edit_image(&mut solution.unwrap(), args.clue_style);
         return Ok(());
     }
 

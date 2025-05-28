@@ -406,6 +406,9 @@ fn quality_check(solution: &Solution) {
             if color_key == color_key2 {
                 continue;
             }
+            if color.corner != color2.corner && color.rgb == color2.rgb {
+                continue; // Corners may be the same color.
+            }
             let (r, g, b) = color.rgb;
             let (r2, g2, b2) = color2.rgb;
             if (r2 as i16 - r as i16).abs()
