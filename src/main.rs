@@ -3,6 +3,7 @@ extern crate image;
 
 mod export;
 mod grid_solve;
+mod gui;
 mod import;
 mod line_solve;
 mod puzzle;
@@ -61,6 +62,10 @@ struct Args {
     /// Clue style (currently only meaningful for CharGrid input)
     #[arg(long, value_enum, default_value_t)]
     clue_style: ClueStyle,
+
+    /// Opens the GUI editor
+    #[arg(long, default_value_t)]
+    gui: bool,
 }
 
 fn read_path(path: &PathBuf) -> String {
@@ -102,17 +107,28 @@ fn main() -> std::io::Result<()> {
         NonogramFormat::CharGrid => {
             let grid_string = read_path(&args.input_path);
 
-            let solution = import::char_grid_to_solution(&grid_string);
+            let mut solution = import::char_grid_to_solution(&grid_string);
 
             let puzzle = match args.clue_style {
                 ClueStyle::Nono => Nono::to_dyn(import::solution_to_puzzle(&solution)),
-                ClueStyle::Triano => Triano::to_dyn(import::solution_to_triano_puzzle(&solution)),
+                ClueStyle::Triano => {
+                    let puzzle = import::solution_to_triano_puzzle(&solution);
+
+                    // HACK: We adjusted the palette
+                    solution.palette = puzzle.palette.clone();
+                    Triano::to_dyn(puzzle)
+                }
             };
 
             (puzzle, Some(solution))
         }
         _ => todo!(),
     };
+
+    if args.gui {
+        gui::edit_image(&mut solution.unwrap());
+        return Ok(());
+    }
 
     match args.output_path {
         Some(path) => {
@@ -122,7 +138,10 @@ fn main() -> std::io::Result<()> {
                 let output_data = match args.output_format {
                     NonogramFormat::Olsak => export::as_olsak(&puzzle.assume_nono()),
                     NonogramFormat::Webpbn => export::as_webpbn(&puzzle.assume_nono()),
+                    NonogramFormat::Html => match puzzle {
+                        puzzle::DynPuzzle::Nono(p) => export::as_html(&p),
                         puzzle::DynPuzzle::Triano(p) => export::as_html(&p),
+                    },
                     NonogramFormat::Image => panic!(),
                     NonogramFormat::CharGrid => export::as_char_grid(&solution.unwrap()),
                 };

@@ -441,7 +441,10 @@ pub fn solution_to_triano_puzzle(solution: &Solution) -> Puzzle<Triano> {
     let mut palette = solution.palette.clone();
 
     // Let's assume triano clues are black-and-white
-    for (_, color_info) in &mut palette {
+    for (color, color_info) in &mut palette {
+        if color == &BACKGROUND {
+            continue;
+        }
         color_info.rgb = (0, 0, 0);
     }
 
@@ -452,7 +455,7 @@ pub fn solution_to_triano_puzzle(solution: &Solution) -> Puzzle<Triano> {
 
         for x in 0..width {
             let color = solution.grid[x][y];
-            let color_info = &solution.palette[&color];
+            let color_info = &palette[&color];
 
             // For example `!left` means ◢ or ◥:
             if color_info.corner.is_some_and(|c| !c.left) {
@@ -498,7 +501,7 @@ pub fn solution_to_triano_puzzle(solution: &Solution) -> Puzzle<Triano> {
 
         for y in 0..height {
             let color = solution.grid[x][y];
-            let color_info = &solution.palette[&color];
+            let color_info = &palette[&color];
 
             if color_info.corner.is_some_and(|c| !c.upper) {
                 // Only a blank clue can accept a front cap:
