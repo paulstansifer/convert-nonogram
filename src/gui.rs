@@ -135,9 +135,13 @@ impl eframe::App for MyEguiApp {
                         ui.horizontal(|ui| {
                             if ui
                                 .button(
-                                    RichText::new(&color_info.ch.to_string())
-                                        .monospace()
-                                        .color(egui::Color32::from_rgb(*r, *g, *b)),
+                                    RichText::new(if color_info.corner.is_some() {
+                                        color_info.ch.to_string()
+                                    } else {
+                                        "■".to_string()
+                                    })
+                                    .monospace()
+                                    .color(egui::Color32::from_rgb(*r, *g, *b)),
                                 )
                                 .clicked()
                             {
@@ -222,14 +226,20 @@ impl eframe::App for MyEguiApp {
                     let from_screen = to_screen.inverse();
 
                     if let Some(pointer_pos) = response.interact_pointer_pos() {
-                        let canvas_pos = from_screen * pointer_pos;
-                        let x = canvas_pos.x as usize;
-                        let y = canvas_pos.y as usize;
+                        if response.clicked() {
+                            let canvas_pos = from_screen * pointer_pos;
+                            let x = canvas_pos.x as usize;
+                            let y = canvas_pos.y as usize;
 
-                        if (0..x_size).contains(&x) && (0..y_size).contains(&y) {
-                            self.picture.grid[x][y] = picked_color;
+                            if (0..x_size).contains(&x) && (0..y_size).contains(&y) {
+                                if self.picture.grid[x][y] != picked_color {
+                                    self.picture.grid[x][y] = picked_color;
+                                } else {
+                                    self.picture.grid[x][y] = BACKGROUND;
+                                }
+                            }
+                            self.report_stale = true;
                         }
-                        self.report_stale = true;
                     }
 
                     let mut shapes = vec![];
