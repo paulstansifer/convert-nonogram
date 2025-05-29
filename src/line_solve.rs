@@ -362,7 +362,10 @@ fn packed_extents<C: Clue + Copy>(
             placeable = true;
             for possible_pos in (pos..(pos + clue.len())).rev() {
                 if possible_pos >= lane.len() {
-                    anyhow::bail!("impossible clue");
+                    anyhow::bail!(
+                        "clue {clue:?} at {possible_pos} exceeds lane length {}",
+                        lane.len()
+                    );
                 }
                 let cur = lane_at(possible_pos);
 
