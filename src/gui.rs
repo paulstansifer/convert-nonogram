@@ -12,9 +12,21 @@ struct MyEguiApp {
     current_color: Color,
     scale: f32,
     clue_style: ClueStyle,
+
+    undo_stack: Vec<UndoAction>,
+
     auto_solve: bool,
     solve_report: String,
     report_stale: bool,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum UndoAction {
+    ChangeColor {
+        x: usize,
+        y: usize,
+        new_color: Color,
+    },
 }
 
 impl MyEguiApp {
@@ -28,6 +40,9 @@ impl MyEguiApp {
             current_color: BACKGROUND,
             scale: 10.0,
             clue_style,
+
+            undo_stack: vec![],
+
             auto_solve: false,
             solve_report: "".to_string(),
             report_stale: true,
@@ -195,6 +210,7 @@ impl eframe::App for MyEguiApp {
                         if (0..x_size).contains(&x) && (0..y_size).contains(&y) {
                             self.picture.grid[x][y] = picked_color;
                         }
+                        self.report_stale = true;
                     }
 
                     let mut shapes = vec![];
