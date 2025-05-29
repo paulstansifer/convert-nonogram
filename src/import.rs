@@ -368,7 +368,7 @@ pub fn webpbn_to_puzzle(webpbn: &str) -> Puzzle<Nono> {
     res
 }
 
-fn quality_check(solution: &Solution) {
+pub fn quality_check(solution: &Solution) {
     let width = solution.grid.len();
     let height = solution.grid.first().unwrap().len();
 
@@ -437,8 +437,6 @@ fn quality_check(solution: &Solution) {
 pub fn solution_to_triano_puzzle(solution: &Solution) -> Puzzle<Triano> {
     let width = solution.grid.len();
     let height = solution.grid.first().unwrap().len();
-
-    quality_check(solution);
 
     let mut rows: Vec<Vec<Triano>> = Vec::new();
     let mut cols: Vec<Vec<Triano>> = Vec::new();
@@ -561,8 +559,6 @@ pub fn solution_to_triano_puzzle(solution: &Solution) -> Puzzle<Triano> {
 pub fn solution_to_puzzle(solution: &Solution) -> Puzzle<Nono> {
     let width = solution.grid.len();
     let height = solution.grid.first().unwrap().len();
-
-    quality_check(solution);
 
     let mut rows: Vec<Vec<Nono>> = Vec::new();
     let mut cols: Vec<Vec<Nono>> = Vec::new();

@@ -10,8 +10,8 @@ mod puzzle;
 use std::{io::Read, path::PathBuf};
 
 use clap::Parser;
-use import::webpbn_to_puzzle;
-use puzzle::{Clue, Nono, Triano};
+use import::{quality_check, webpbn_to_puzzle};
+use puzzle::{Clue, Nono, Solution, Triano};
 
 #[derive(Clone, Copy, Debug, clap::ValueEnum, Default, PartialEq, Eq)]
 enum NonogramFormat {
@@ -141,6 +141,10 @@ fn main() -> std::io::Result<()> {
         }
         _ => todo!(),
     };
+
+    if let Some(ref solution) = solution {
+        quality_check(solution);
+    }
 
     if args.gui {
         gui::edit_image(&mut solution.unwrap(), args.clue_style);
