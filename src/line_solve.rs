@@ -344,6 +344,13 @@ fn packed_extents<C: Clue + Copy>(
             &clues[idx]
         }
     };
+    let clue_color_at = |clue: &C, idx: usize| -> Color {
+        if reversed {
+            clue.color_at(clue.len() - 1 - idx)
+        } else {
+            clue.color_at(idx)
+        }
+    };
 
     // -- Pack to the left (we've abstracted over `reversed`) --
 
@@ -356,11 +363,13 @@ fn packed_extents<C: Clue + Copy>(
                 pos += 1;
             }
         }
-        // Scanning backwards for mismatches lets us jump farther sometimes.
+
+        // This could be made a little more efficient with the Boyer-Moore algorithm
         let mut placeable = false;
         while !placeable {
             placeable = true;
-            for possible_pos in (pos..(pos + clue.len())).rev() {
+            for clue_idx in 0..clue.len() {
+                let possible_pos = pos + clue_idx;
                 if possible_pos >= lane.len() {
                     anyhow::bail!(
                         "clue {clue:?} at {possible_pos} exceeds lane length {}",
@@ -369,8 +378,8 @@ fn packed_extents<C: Clue + Copy>(
                 }
                 let cur = lane_at(possible_pos);
 
-                if !cur.can_be(clue.color_at(possible_pos - pos)) {
-                    pos = possible_pos + 1;
+                if !cur.can_be(clue_color_at(clue, clue_idx)) {
+                    pos += 1;
                     placeable = false;
                     break;
                 }
