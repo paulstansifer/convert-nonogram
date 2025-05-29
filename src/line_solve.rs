@@ -314,7 +314,7 @@ impl<'a, C: Clue> Iterator for ClueAdjIterator<'a, C> {
             self.i > 0 && self.clues[self.i - 1].must_be_separated_from(&self.clues[self.i]),
             &self.clues[self.i],
             self.i < self.clues.len() - 1
-                && self.clues[self.i + 1].must_be_separated_from(&self.clues[self.i]),
+                && self.clues[self.i].must_be_separated_from(&self.clues[self.i + 1]),
         );
         self.i += 1;
         Some(res)
@@ -359,8 +359,7 @@ fn packed_extents<C: Clue + Copy>(
     for clue_idx in 0..clues.len() {
         let clue = clue_at(clue_idx);
         if let Some(last_clue) = last_clue {
-            if last_clue.must_be_separated_from(clue) {
-                pos += 1;
+            } else {
             }
         }
 
