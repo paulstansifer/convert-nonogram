@@ -15,6 +15,7 @@ pub struct Report {
     pub skims: usize,
     pub scrubs: usize,
     pub cells_left: usize,
+    pub solved_mask: Vec<Vec<bool>>,
 }
 
 pub struct LaneState<'a, C: Clue> {
@@ -132,20 +133,15 @@ fn find_best_lane<'a, 'b, C: Clue>(
     res
 }
 
-fn print_grid<C: Clue>(grid: &Grid, puzzle: &Puzzle<C>) {
-    for row in grid.rows() {
-        for cell in row {
-            match cell.known_or() {
-                None => {
-                    print!("?");
-                }
-                Some(c) => {
-                    print!("{}", puzzle.palette[&c].ch);
-                }
-            }
-        }
-        println!();
-    }
+fn grid_to_solved_mask<C: Clue>(grid: &Grid) -> Vec<Vec<bool>> {
+    grid.columns()
+        .into_iter()
+        .map(|col| {
+            col.iter()
+                .map(|cell| cell.is_known())
+                .collect::<Vec<bool>>()
+        })
+        .collect()
 }
 
 fn display_step<'a, C: Clue>(
@@ -231,11 +227,12 @@ pub fn solve<C: Clue>(puzzle: &Puzzle<C>, trace_solve: bool) -> anyhow::Result<R
                 Some(lane) => lane,
                 None => {
                     if will_scrub {
-                        print_grid(&grid, puzzle);
+                        // Nothing left to try; can't solve.
                         return Ok(Report {
                             skims,
                             scrubs,
                             cells_left,
+                            solved_mask: grid_to_solved_mask::<C>(&grid),
                         });
                     } else {
                         allowed_skims = 0; // Try again, but scrub.
@@ -304,6 +301,7 @@ pub fn solve<C: Clue>(puzzle: &Puzzle<C>, trace_solve: bool) -> anyhow::Result<R
                 skims,
                 scrubs,
                 cells_left,
+                solved_mask: grid_to_solved_mask::<C>(&grid),
             });
         }
 

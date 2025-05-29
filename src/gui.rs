@@ -18,6 +18,7 @@ struct MyEguiApp {
     auto_solve: bool,
     solve_report: String,
     report_stale: bool,
+    solved_mask: Vec<Vec<bool>>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -31,6 +32,8 @@ enum UndoAction {
 
 impl MyEguiApp {
     fn new(cc: &eframe::CreationContext<'_>, picture: Solution, clue_style: ClueStyle) -> Self {
+        let solved_mask = vec![vec![false; picture.grid[0].len()]; picture.grid.len()];
+
         // Customize egui here with cc.egui_ctx.set_fonts and cc.egui_ctx.set_visuals.
         // Restore app state using cc.storage (requires the "persistence" feature).
         // Use the cc.gl (a glow::Context) to create graphics shaders and buffers that you can use
@@ -46,20 +49,22 @@ impl MyEguiApp {
             auto_solve: false,
             solve_report: "".to_string(),
             report_stale: true,
+            solved_mask,
         }
     }
 }
 
 fn cell_shape(
     ci: &ColorInfo,
+    solved: bool,
     x: usize,
     y: usize,
     to_screen: &egui::emath::RectTransform,
-) -> egui::Shape {
+) -> Vec<egui::Shape> {
     let (r, g, b) = ci.rgb;
     let color = egui::Color32::from_rgb(r, g, b);
 
-    match ci.corner {
+    let actual_cell = match ci.corner {
         None => egui::Shape::rect_filled(
             Rect::from_min_size(to_screen * Pos2::new(x as f32, y as f32), to_screen.scale()),
             0.0,
@@ -82,7 +87,19 @@ fn cell_shape(
 
             Shape::convex_polygon(points, color, (0.0, color))
         }
+    };
+
+    let mut res = vec![actual_cell];
+
+    if !solved {
+        res.push(egui::Shape::circle_filled(
+            to_screen * Pos2::new(x as f32 + 0.5, y as f32 + 0.5),
+            to_screen.scale().x * 0.3,
+            egui::Color32::from_rgb(128, 128, 128),
+        ))
     }
+
+    res
 }
 
 impl eframe::App for MyEguiApp {
@@ -152,8 +169,10 @@ impl eframe::App for MyEguiApp {
                                 skims,
                                 scrubs,
                                 cells_left,
+                                solved_mask,
                             }) => {
                                 self.solve_report = format!("{}/{}/{}", skims, scrubs, cells_left);
+                                self.solved_mask = solved_mask;
                             }
                             Err(e) => self.solve_report = format!("Error: {:?}", e),
                         }
@@ -219,8 +238,11 @@ impl eframe::App for MyEguiApp {
                         for x in 0..x_size {
                             let cell = self.picture.grid[x][y];
                             let color_info = &self.picture.palette[&cell];
+                            let solved = self.solved_mask[x][y] || self.report_stale;
 
-                            shapes.push(cell_shape(color_info, x, y, &to_screen));
+                            for shape in cell_shape(color_info, solved, x, y, &to_screen) {
+                                shapes.push(shape);
+                            }
                         }
                     }
                     painter.extend(shapes);

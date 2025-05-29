@@ -177,6 +177,7 @@ fn main() -> std::io::Result<()> {
                 skims,
                 scrubs,
                 cells_left,
+                solved_mask: _solved_mask,
             }) => {
                 if cells_left == 0 {
                     eprintln!("Solved after {} skims and {} scrubs.", skims, scrubs);
