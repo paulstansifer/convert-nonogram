@@ -23,8 +23,8 @@ enum NonogramFormat {
     Webpbn,
     /// (Export-only.) The format used by the 'olsak' solver.
     Olsak,
-    /// A grid of characters. Attempts some sensible matching of characters to colors, but results
-    /// will vary.
+    /// Informal text format: a grid of characters. Attempts some sensible matching of characters
+    /// to colors, but results will vary. This is the only format that supports Triano puzzles.
     CharGrid,
     /// (Export-only.) An HTML representation of a puzzle.
     Html,
@@ -48,12 +48,12 @@ struct Args {
     output_path: Option<PathBuf>,
 
     /// Format to expect the input to be in
-    #[arg(short, long, value_enum, default_value_t)]
-    input_format: NonogramFormat,
+    #[arg(short, long, value_enum)]
+    input_format: Option<NonogramFormat>,
 
     /// Format to emit as output
-    #[arg(short, long, value_enum, default_value_t)]
-    output_format: NonogramFormat,
+    #[arg(short, long, value_enum)]
+    output_format: Option<NonogramFormat>,
 
     /// Explain the solve process line-by-line.
     #[arg(short, long, action = clap::ArgAction::SetTrue)]
@@ -80,10 +80,27 @@ fn read_path(path: &PathBuf) -> String {
     res
 }
 
+fn infer_format(path: &PathBuf, format_arg: Option<NonogramFormat>) -> NonogramFormat {
+    if let Some(format) = format_arg {
+        return format;
+    }
+
+    match path.extension().and_then(|s| s.to_str()) {
+        Some("png") | Some("bmp") | Some("gif") => NonogramFormat::Image,
+        Some("webpbn") => NonogramFormat::Webpbn,
+        Some("g") => NonogramFormat::Olsak,
+        Some("html") => NonogramFormat::Html,
+        Some("txt") => NonogramFormat::CharGrid,
+        _ => NonogramFormat::CharGrid,
+    }
+}
+
 fn main() -> std::io::Result<()> {
     let args = Args::parse();
 
-    let (puzzle, solution) = match args.input_format {
+    let input_format = infer_format(&args.input_path, args.input_format);
+
+    let (puzzle, solution) = match input_format {
         NonogramFormat::Html => {
             panic!("HTML input is not supported.")
         }
@@ -132,10 +149,12 @@ fn main() -> std::io::Result<()> {
 
     match args.output_path {
         Some(path) => {
-            if args.output_format == NonogramFormat::Image {
+            let output_format = infer_format(&path, args.output_format);
+
+            if output_format == NonogramFormat::Image {
                 export::emit_image(&solution.unwrap(), path).unwrap();
             } else {
-                let output_data = match args.output_format {
+                let output_data = match output_format {
                     NonogramFormat::Olsak => export::as_olsak(&puzzle.assume_nono()),
                     NonogramFormat::Webpbn => export::as_webpbn(&puzzle.assume_nono()),
                     NonogramFormat::Html => match puzzle {

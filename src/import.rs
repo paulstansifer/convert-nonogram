@@ -89,7 +89,7 @@ pub fn char_grid_to_solution(char_grid: &str) -> Solution {
     let mut bg_ch: Option<char> = None;
 
     // Look for a character that seems to represent a white background.
-    for possible_bg in [' ', '.', '_', 'w', 'W', '·', '☐', '0'] {
+    for possible_bg in [' ', '.', '_', 'w', 'W', '·', '☐', '0', '⬜'] {
         if unused_chars.contains(&possible_bg) {
             bg_ch = Some(possible_bg);
         }
@@ -119,7 +119,7 @@ pub fn char_grid_to_solution(char_grid: &str) -> Solution {
     let mut next_color: u8 = 1;
 
     // Look for a character that might be black (but it's not required to exist).
-    for possible_black in ['#', 'B', 'b', '.', '■', '█', '1'] {
+    for possible_black in ['#', 'B', 'b', '.', '■', '█', '1', '⬛'] {
         if unused_chars.contains(&possible_black) {
             palette.insert(
                 possible_black,
@@ -156,6 +156,15 @@ pub fn char_grid_to_solution(char_grid: &str) -> Solution {
     unused_colors.insert('y', (255, 255, 0));
     unused_colors.insert('c', (0, 255, 255));
     unused_colors.insert('m', (255, 0, 255));
+
+    // Using '🟥' and 'r' in the same puzzle (etc.) will cause a warning.
+    unused_colors.insert('🟥', (255, 0, 0));
+    unused_colors.insert('🟩', (0, 255, 0));
+    unused_colors.insert('🟦', (0, 0, 255));
+    unused_colors.insert('🟨', (255, 255, 0));
+    unused_colors.insert('🟧', (255, 165, 0));
+    unused_colors.insert('🟪', (128, 0, 128));
+    unused_colors.insert('🟫', (139, 69, 19));
 
     for ch in unused_chars {
         if unused_colors.is_empty() {
