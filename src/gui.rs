@@ -7,7 +7,7 @@ use crate::{
     ClueStyle,
 };
 
-struct MyEguiApp {
+struct NonogramGui {
     picture: Solution,
     current_color: Color,
     scale: f32,
@@ -30,7 +30,7 @@ enum UndoAction {
     },
 }
 
-impl MyEguiApp {
+impl NonogramGui {
     fn new(cc: &eframe::CreationContext<'_>, picture: Solution, clue_style: ClueStyle) -> Self {
         let solved_mask = vec![vec![false; picture.grid[0].len()]; picture.grid.len()];
 
@@ -38,7 +38,7 @@ impl MyEguiApp {
         // Restore app state using cc.storage (requires the "persistence" feature).
         // Use the cc.gl (a glow::Context) to create graphics shaders and buffers that you can use
         // for e.g. egui::PaintCallback.
-        MyEguiApp {
+        NonogramGui {
             picture,
             current_color: BACKGROUND,
             scale: 10.0,
@@ -72,17 +72,21 @@ fn cell_shape(
         ),
         Some(Corner { left, upper }) => {
             let mut points = vec![];
+            // The `+`ed offsets are empirircally-set to make things fit better.
             if left || upper {
-                points.push(to_screen * Pos2::new(x as f32, y as f32));
+                points.push(to_screen * Pos2::new(x as f32, y as f32) + Vec2::new(0.25, -0.5));
             }
             if !left || upper {
-                points.push(to_screen * Pos2::new((x + 1) as f32, y as f32));
+                points
+                    .push(to_screen * Pos2::new((x + 1) as f32, y as f32) + Vec2::new(0.25, -0.5));
             }
             if !left || !upper {
-                points.push(to_screen * Pos2::new((x + 1) as f32, (y + 1) as f32));
+                points.push(
+                    to_screen * Pos2::new((x + 1) as f32, (y + 1) as f32) + Vec2::new(0.25, 0.5),
+                );
             }
             if left || !upper {
-                points.push(to_screen * Pos2::new(x as f32, (y + 1) as f32));
+                points.push(to_screen * Pos2::new(x as f32, (y + 1) as f32) + Vec2::new(0.25, 0.5));
             }
 
             Shape::convex_polygon(points, color, (0.0, color))
@@ -152,6 +156,64 @@ impl NonogramGui {
                 });
         }
     }
+
+    fn canvas(&mut self, ui: &mut egui::Ui) {
+        let x_size = self.picture.grid.len();
+        let y_size = self.picture.grid.first().unwrap().len();
+
+        Frame::canvas(ui.style()).show(ui, |ui| {
+            let (mut response, painter) = ui.allocate_painter(
+                egui::Vec2::new(self.scale * x_size as f32, self.scale * y_size as f32),
+                egui::Sense::click_and_drag(),
+            );
+
+            let to_screen = egui::emath::RectTransform::from_to(
+                Rect::from_min_size(
+                    Pos2::ZERO,
+                    Vec2::new(
+                        self.picture.grid.len() as f32,
+                        self.picture.grid.first().unwrap().len() as f32,
+                    ),
+                ),
+                response.rect,
+            );
+            let from_screen = to_screen.inverse();
+
+            if let Some(pointer_pos) = response.interact_pointer_pos() {
+                if response.clicked() {
+                    let canvas_pos = from_screen * pointer_pos;
+                    let x = canvas_pos.x as usize;
+                    let y = canvas_pos.y as usize;
+
+                    if (0..x_size).contains(&x) && (0..y_size).contains(&y) {
+                        if self.picture.grid[x][y] != self.current_color {
+                            self.picture.grid[x][y] = self.current_color;
+                        } else {
+                            self.picture.grid[x][y] = BACKGROUND;
+                        }
+                    }
+                    self.report_stale = true;
+                }
+            }
+
+            let mut shapes = vec![];
+
+            for y in 0..y_size {
+                for x in 0..x_size {
+                    let cell = self.picture.grid[x][y];
+                    let color_info = &self.picture.palette[&cell];
+                    let solved = self.solved_mask[x][y] || self.report_stale;
+
+                    for shape in cell_shape(color_info, solved, x, y, &to_screen) {
+                        shapes.push(shape);
+                    }
+                }
+            }
+            painter.extend(shapes);
+            response.mark_changed();
+            response
+        });
+    }
 }
 
 impl eframe::App for NonogramGui {
@@ -161,9 +223,6 @@ impl eframe::App for NonogramGui {
             self.picture.palette[&BACKGROUND].rgb.1,
             self.picture.palette[&BACKGROUND].rgb.2,
         );
-
-        let x_size = self.picture.grid.len();
-        let y_size = self.picture.grid.first().unwrap().len();
 
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.horizontal(|ui| {
@@ -212,72 +271,7 @@ impl eframe::App for NonogramGui {
                     );
                 });
 
-                self.current_color = picked_color;
-                if let Some(new_color_rgb) = new_color_rgb {
-                    self.picture
-                        .palette
-                        .entry(picked_color)
-                        .and_modify(|color_info| {
-                            color_info.rgb = (
-                                (new_color_rgb[0] * 256.0) as u8,
-                                (new_color_rgb[1] * 256.0) as u8,
-                                (new_color_rgb[2] * 256.0) as u8,
-                            );
-                        });
-                }
-
-                Frame::canvas(ui.style()).show(ui, |ui| {
-                    let (mut response, painter) = ui.allocate_painter(
-                        egui::Vec2::new(self.scale * x_size as f32, self.scale * y_size as f32),
-                        egui::Sense::click_and_drag(),
-                    );
-
-                    let to_screen = egui::emath::RectTransform::from_to(
-                        Rect::from_min_size(
-                            Pos2::ZERO,
-                            Vec2::new(
-                                self.picture.grid.len() as f32,
-                                self.picture.grid.first().unwrap().len() as f32,
-                            ),
-                        ),
-                        response.rect,
-                    );
-                    let from_screen = to_screen.inverse();
-
-                    if let Some(pointer_pos) = response.interact_pointer_pos() {
-                        if response.clicked() {
-                            let canvas_pos = from_screen * pointer_pos;
-                            let x = canvas_pos.x as usize;
-                            let y = canvas_pos.y as usize;
-
-                            if (0..x_size).contains(&x) && (0..y_size).contains(&y) {
-                                if self.picture.grid[x][y] != picked_color {
-                                    self.picture.grid[x][y] = picked_color;
-                                } else {
-                                    self.picture.grid[x][y] = BACKGROUND;
-                                }
-                            }
-                            self.report_stale = true;
-                        }
-                    }
-
-                    let mut shapes = vec![];
-
-                    for y in 0..y_size {
-                        for x in 0..x_size {
-                            let cell = self.picture.grid[x][y];
-                            let color_info = &self.picture.palette[&cell];
-                            let solved = self.solved_mask[x][y] || self.report_stale;
-
-                            for shape in cell_shape(color_info, solved, x, y, &to_screen) {
-                                shapes.push(shape);
-                            }
-                        }
-                    }
-                    painter.extend(shapes);
-                    response.mark_changed();
-                    response
-                });
+                self.canvas(ui);
             });
         });
     }
@@ -294,7 +288,7 @@ pub fn edit_image(puzzle: &mut Solution, clue_style: ClueStyle) {
                 ..Style::default()
             };
             cc.egui_ctx.set_style(style);
-            Ok(Box::new(MyEguiApp::new(cc, puzzle.clone(), clue_style)))
+            Ok(Box::new(NonogramGui::new(cc, puzzle.clone(), clue_style)))
         }),
     )
     .unwrap()
