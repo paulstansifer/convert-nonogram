@@ -712,6 +712,15 @@ fn arrange_gaps_test() {
     }
 }
 
+macro_rules! nc {
+    ($color:expr, $count:expr) => {
+        crate::puzzle::Nono {
+            color: $color.unwrap_color(),
+            count: $count,
+        }
+    };
+}
+
 // Uses `Cell` everywhere, even in the clues, for simplicity, even though clues have to be one
 // specific_color
 macro_rules! n_scrub {
@@ -727,12 +736,25 @@ macro_rules! n_scrub {
     };
 }
 
-macro_rules! n_skim {
-    ([$($color:expr, $count:expr);*] $($state:expr),*) => {
+macro_rules! scrub {
+    ([$($clue:expr),*] $($state:expr),*) => {
+        {
+            let mut initial = ndarray::arr1(&[ $($state),* ]);
+            scrub_line(
+                &vec![ $( $clue ),* ],
+                initial.rows_mut().into_iter().next().unwrap())
+                    .expect("impossible!");
+            initial
+        }
+    };
+}
+
+macro_rules! skim {
+    ([$($clue:expr),*] $($state:expr),*) => {
         {
             let mut initial = ndarray::arr1(&[ $($state),* ]);
             skim_line(
-                &vec![ $( crate::puzzle::Nono { color: $color.unwrap_color(), count: $count} ),* ],
+                &vec![ $( $clue ),* ],
                 initial.rows_mut().into_iter().next().unwrap())
                     .expect("impossible!");
             initial
@@ -746,26 +768,40 @@ macro_rules! line {
     };
 }
 
+#[cfg(test)]
+fn nc(color: Cell, count: u16) -> Nono {
+    Nono {
+        color: color.unwrap_color(),
+        count,
+    }
+}
+
 #[test]
 fn scrub_test() {
     let bw = Cell::from_colors(&[BACKGROUND, Color(1)]);
     let w = Cell::from_color(Color(0));
     let b = Cell::from_color(Color(1));
 
-    assert_eq!(n_scrub!([b, 1]  bw, bw, bw, bw), line!(bw, bw, bw, bw));
+    assert_eq!(scrub!([nc(b, 1)]  bw, bw, bw, bw), line!(bw, bw, bw, bw));
 
-    assert_eq!(n_scrub!([b, 1]  w, bw, bw, bw), line!(w, bw, bw, bw));
-
-    assert_eq!(n_scrub!([b, 1; b, 2]  bw, bw, bw, bw), line!(b, w, b, b));
-
-    assert_eq!(n_scrub!([b, 1]  bw, bw, b, bw), line!(w, w, b, w));
-
-    assert_eq!(n_scrub!([b, 3]  bw, bw, bw, bw), line!(bw, b, b, bw));
-
-    assert_eq!(n_scrub!([b, 3]  bw, b, bw, bw, bw), line!(bw, b, b, bw, w));
+    assert_eq!(scrub!([nc(b, 1)]  w, bw, bw, bw), line!(w, bw, bw, bw));
 
     assert_eq!(
-        n_scrub!([b, 2; b, 2]  bw, bw, bw, bw, bw),
+        scrub!([nc(b, 1), nc(b, 2)]  bw, bw, bw, bw),
+        line!(b, w, b, b)
+    );
+
+    assert_eq!(scrub!([nc(b, 1)]  bw, bw, b, bw), line!(w, w, b, w));
+
+    assert_eq!(scrub!([nc(b, 3)]  bw, bw, bw, bw), line!(bw, b, b, bw));
+
+    assert_eq!(
+        scrub!([nc(b, 3)]  bw, b, bw, bw, bw),
+        line!(bw, b, b, bw, w)
+    );
+
+    assert_eq!(
+        scrub!([nc(b, 2), nc(b, 2)]  bw, bw, bw, bw, bw),
         line!(b, b, w, b, b)
     );
 
@@ -788,29 +824,35 @@ fn skim_test() {
     let b = Cell::from_color(Color(1));
     let r = Cell::from_color(Color(2));
 
-    assert_eq!(n_skim!([b, 1]  x, x, x, x), line!(x, x, x, x));
+    assert_eq!(skim!([nc(b, 1)]  x, x, x, x), line!(x, x, x, x));
 
-    assert_eq!(n_skim!([b, 1]  w, x, x, x), line!(w, x, x, x));
+    assert_eq!(skim!([nc(b, 1)]  w, x, x, x), line!(w, x, x, x));
 
-    assert_eq!(n_skim!([b, 3]  x, x, x, x), line!(x, b, b, x));
+    assert_eq!(skim!([nc(b, 3)]  x, x, x, x), line!(x, b, b, x));
 
-    assert_eq!(n_skim!([b, 2; b, 1]  x, x, x, x), line!(b, b, w, b));
+    assert_eq!(skim!([nc(b, 2), nc(b, 1)]  x, x, x, x), line!(b, b, w, b));
 
-    assert_eq!(n_skim!([b, 1; b, 2]  x, x, x, x), line!(b, w, b, b));
+    assert_eq!(skim!([nc(b, 1), nc(b, 2)]  x, x, x, x), line!(b, w, b, b));
 
     assert_eq!(
-        n_skim!([b, 2]  x, x, x, x, x, b, b, x),
+        skim!([nc(b, 2)]  x, x, x, x, x, b, b, x),
         line!(w, w, w, w, w, b, b, w)
     );
 
-    assert_eq!(n_skim!([b, 1]  x, x, b, x), line!(w, w, b, w));
+    assert_eq!(skim!([nc(b, 1)]  x, x, b, x), line!(w, w, b, w));
 
-    assert_eq!(n_skim!([b, 3]  x, b, x, x, x), line!(x, b, b, x, w));
+    assert_eq!(skim!([nc(b, 3)]  x, b, x, x, x), line!(x, b, b, x, w));
 
-    assert_eq!(n_skim!([b, 2; b, 2]  x, x, x, x, x), line!(b, b, w, b, b));
+    assert_eq!(
+        skim!([nc(b, 2), nc(b, 2)]  x, x, x, x, x),
+        line!(b, b, w, b, b)
+    );
 
     // Different colors don't need separation, so we don't know as much:
-    assert_eq!(n_skim!([r, 2; b, 2]  x, x, x, x, x), line!(x, r, x, b, x));
+    assert_eq!(
+        skim!([nc(r, 2), nc(b, 2)]  x, x, x, x, x),
+        line!(x, r, x, b, x)
+    );
 }
 
 macro_rules! heur {
