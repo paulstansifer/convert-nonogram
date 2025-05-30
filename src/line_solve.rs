@@ -359,7 +359,14 @@ fn packed_extents<C: Clue + Copy>(
     for clue_idx in 0..clues.len() {
         let clue = clue_at(clue_idx);
         if let Some(last_clue) = last_clue {
+            if !reversed {
+                if last_clue.must_be_separated_from(clue) {
+                    pos += 1;
+                }
             } else {
+                if clue.must_be_separated_from(&last_clue) {
+                    pos += 1;
+                }
             }
         }
 
@@ -457,6 +464,14 @@ pub fn skim_line<C: Clue + Copy>(
 
     let left_packed_right_extents = packed_extents(clues, &lane, false)?;
     let right_packed_left_extents = packed_extents(clues, &lane, true)?;
+    for i in 0..(clues.len() - 1) {
+        println!(
+            "clues {:?} vs {:?} MBS: {}",
+            clues[i],
+            clues[i + 1],
+            clues[i].must_be_separated_from(&clues[i + 1])
+        );
+    }
 
     for ((gap_before, clue, gap_after), (left_extent, right_extent)) in ClueAdjIterator::new(clues)
         .zip(
@@ -465,14 +480,22 @@ pub fn skim_line<C: Clue + Copy>(
                 .zip(left_packed_right_extents.iter()),
         )
     {
+        if left_extent > right_extent {
+            continue; // No overlap
+        }
+
+        let clue_wiggle_room = clue.len() + 1 - (*right_extent - *left_extent);
+
         for idx in (*left_extent)..=(*right_extent) {
-            learn_cell(
-                clue.color_at(idx - *left_extent),
-                &mut lane,
-                idx,
-                &mut affected,
-            )
-            .context(format!("overlap: clue {:?} at {}", clue, idx))?
+            let mut clue_cell = Cell::new_impossible();
+            for wiggle_idx in 0..=clue_wiggle_room {
+                clue_cell.actually_could_be(clue.color_at(idx - *left_extent + wiggle_idx));
+            }
+
+            learn_cell_intersect(clue_cell, &mut lane, idx, &mut affected).context(format!(
+                "overlap: clue {:?} at {}. {:?} -> {:?}",
+                clue, idx, lane[idx], clue_cell
+            ))?;
         }
 
         // TODO: this seems to still be necessary, despite the background inference below!
@@ -722,7 +745,7 @@ macro_rules! nc {
 }
 
 #[cfg(test)]
-use crate::puzzle::Nono;
+use crate::puzzle::{Nono, Triano};
 
 // Uses `Cell` everywhere, even in the clues, for simplicity, even though clues have to be one
 // specific_color
@@ -741,6 +764,8 @@ fn parse_color(c: char) -> Color {
         '⬛' => Color(1),
         '🟥' => Color(2),
         '🟩' => Color(3),
+        '🮞' => Color(4),
+        '🮟' => Color(5),
         _ => panic!("unknown color: {}", c),
     }
 }
@@ -753,6 +778,36 @@ fn n(spec: &str) -> Vec<Nono> {
         let color = parse_color(chunk_chars.next().unwrap());
         let count = chunk_chars.collect::<String>().parse::<u16>().unwrap();
         res.push(Nono { color, count });
+    }
+    res
+}
+
+#[cfg(test)]
+fn tri(spec: &str) -> Vec<Triano> {
+    use crate::puzzle::Triano;
+
+    let mut res = vec![];
+    for chunk in spec.split_whitespace() {
+        let mut clue = Triano {
+            front_cap: None,
+            body_color: Color(1),
+            body_len: 0,
+            back_cap: None,
+        };
+        if chunk.starts_with('🮞') {
+            clue.front_cap = Some(parse_color('🮞'));
+        }
+        if chunk.ends_with('🮟') {
+            clue.back_cap = Some(parse_color('🮟'));
+        }
+        clue.body_color = parse_color('⬛');
+        clue.body_len = chunk
+            .trim_start_matches('🮞')
+            .trim_end_matches('🮟')
+            .parse()
+            .unwrap();
+
+        res.push(clue);
     }
     res
 }
@@ -848,6 +903,20 @@ fn skim_test() {
     assert_eq!(
         test_skim(n("🟥2 ⬛2"), "🟥⬛⬜ 🟥⬛⬜ 🟥⬛⬜ 🟥⬛⬜ 🟥⬛⬜"),
         l("🟥⬛⬜ 🟥 🟥⬛⬜ ⬛ 🟥⬛⬜")
+    );
+}
+
+#[test]
+fn skim_tri_test() {
+    // Perhaps skimming should figure out things based on the known ends of clues?
+    assert_eq!(
+        test_skim(tri("🮞1"), "🮞⬛🮟⬜ 🮞⬛🮟⬜ 🮞⬛🮟⬜ 🮞⬛🮟⬜"),
+        l("🮞⬛🮟⬜ 🮞⬛🮟⬜ 🮞⬛🮟⬜ 🮞⬛🮟⬜")
+    );
+
+    assert_eq!(
+        test_skim(tri("🮞2"), "🮞⬛🮟⬜ 🮞⬛🮟⬜ 🮞⬛🮟⬜ 🮞⬛🮟⬜"),
+        l("🮞⬛🮟⬜ 🮞⬛ ⬛ 🮞⬛🮟⬜")
     );
 }
 
