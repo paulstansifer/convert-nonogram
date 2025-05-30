@@ -102,7 +102,59 @@ fn cell_shape(
     res
 }
 
-impl eframe::App for MyEguiApp {
+impl NonogramGui {
+    fn palette_editor(&mut self, ui: &mut egui::Ui) {
+        let mut picked_color = self.current_color;
+        let mut new_color_rgb = None;
+
+        for (color, color_info) in &self.picture.palette {
+            let (r, g, b) = &color_info.rgb;
+
+            ui.horizontal(|ui| {
+                if ui
+                    .button(
+                        RichText::new(if color_info.corner.is_some() {
+                            color_info.ch.to_string()
+                        } else {
+                            "■".to_string()
+                        })
+                        .monospace()
+                        .color(egui::Color32::from_rgb(*r, *g, *b)),
+                    )
+                    .clicked()
+                {
+                    picked_color = *color;
+                };
+                let mut edited_color = [*r as f32 / 256.0, *g as f32 / 256.0, *b as f32 / 256.0];
+
+                if ui
+                    .color_edit_button_rgb(&mut edited_color)
+                    .on_hover_text("Click to change color")
+                    .changed()
+                {
+                    picked_color = *color;
+                    new_color_rgb = Some(edited_color);
+                }
+            });
+        }
+
+        self.current_color = picked_color;
+        if let Some(new_color_rgb) = new_color_rgb {
+            self.picture
+                .palette
+                .entry(picked_color)
+                .and_modify(|color_info| {
+                    color_info.rgb = (
+                        (new_color_rgb[0] * 256.0) as u8,
+                        (new_color_rgb[1] * 256.0) as u8,
+                        (new_color_rgb[2] * 256.0) as u8,
+                    );
+                });
+        }
+    }
+}
+
+impl eframe::App for NonogramGui {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let _background_color = Color32::from_rgb(
             self.picture.palette[&BACKGROUND].rgb.0,
@@ -114,9 +166,6 @@ impl eframe::App for MyEguiApp {
         let y_size = self.picture.grid.first().unwrap().len();
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            let mut picked_color = self.current_color;
-            let mut new_color_rgb = None;
-
             ui.horizontal(|ui| {
                 ui.label("Puzzle Editor");
                 if ui.button("+").clicked() || ui.input(|i| i.key_pressed(egui::Key::Equals)) {
@@ -129,37 +178,7 @@ impl eframe::App for MyEguiApp {
 
             ui.horizontal(|ui| {
                 ui.vertical(|ui| {
-                    for (color, color_info) in &self.picture.palette {
-                        let (r, g, b) = &color_info.rgb;
-
-                        ui.horizontal(|ui| {
-                            if ui
-                                .button(
-                                    RichText::new(if color_info.corner.is_some() {
-                                        color_info.ch.to_string()
-                                    } else {
-                                        "■".to_string()
-                                    })
-                                    .monospace()
-                                    .color(egui::Color32::from_rgb(*r, *g, *b)),
-                                )
-                                .clicked()
-                            {
-                                picked_color = *color;
-                            };
-                            let mut edited_color =
-                                [*r as f32 / 256.0, *g as f32 / 256.0, *b as f32 / 256.0];
-
-                            if ui
-                                .color_edit_button_rgb(&mut edited_color)
-                                .on_hover_text("Click to change color")
-                                .changed()
-                            {
-                                picked_color = *color;
-                                new_color_rgb = Some(edited_color);
-                            }
-                        });
-                    }
+                    self.palette_editor(ui);
                     ui.checkbox(&mut self.auto_solve, "auto-solve");
                     if ui.button("Solve").clicked() || (self.auto_solve && self.report_stale) {
                         let puzzle = if self.clue_style == ClueStyle::Triano {
