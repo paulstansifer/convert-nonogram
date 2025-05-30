@@ -209,6 +209,31 @@ impl NonogramGui {
                     }
                 }
             }
+
+            // Grid lines:
+            for y in 0..=y_size {
+                let points = [
+                    to_screen * Pos2::new(0.0, y as f32),
+                    to_screen * Pos2::new(x_size as f32, y as f32),
+                ];
+                let stroke = egui::Stroke::new(
+                    1.0,
+                    egui::Color32::from_black_alpha(if y % 5 == 0 { 64 } else { 16 }),
+                );
+                shapes.push(egui::Shape::line_segment(points, stroke));
+            }
+            for x in 0..=x_size {
+                let points = [
+                    to_screen * Pos2::new(x as f32, 0.0),
+                    to_screen * Pos2::new(x as f32, y_size as f32),
+                ];
+                let stroke = egui::Stroke::new(
+                    1.0,
+                    egui::Color32::from_black_alpha(if x % 5 == 0 { 64 } else { 16 }),
+                );
+                shapes.push(egui::Shape::line_segment(points, stroke));
+            }
+
             painter.extend(shapes);
             response.mark_changed();
             response
