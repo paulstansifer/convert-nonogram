@@ -385,12 +385,14 @@ fn packed_extents<C: Clue + Copy>(
                 let cur = lane_at(possible_pos);
 
                 if !cur.can_be(clue_color_at(clue, clue_idx)) {
+                    println!("clue {clue:?} at {possible_pos} is impossible: {cur:?} (clue index {clue_idx})");
                     pos += 1;
                     placeable = false;
                     break;
                 }
             }
         }
+        println!("clue {clue:?} placed at {pos} to {}", pos + clue.len() - 1);
         extents.push(pos + clue.len() - 1);
         pos += clue.len();
         last_clue = Some(*clue);
@@ -464,6 +466,12 @@ pub fn skim_line<C: Clue + Copy>(
 
     let left_packed_right_extents = packed_extents(clues, &lane, false)?;
     let right_packed_left_extents = packed_extents(clues, &lane, true)?;
+
+    println!(
+        "left packed extents: {:?}, right packed extents: {:?}",
+        left_packed_right_extents, right_packed_left_extents
+    );
+
     for i in 0..(clues.len() - 1) {
         println!(
             "clues {:?} vs {:?} MBS: {}",
@@ -483,6 +491,10 @@ pub fn skim_line<C: Clue + Copy>(
         if left_extent > right_extent {
             continue; // No overlap
         }
+        println!(
+            "clue {:?} at left {} right {} ... lane is {:?}. {gap_before} before, {gap_after} after",
+            clue, left_extent, right_extent, lane
+        );
 
         let clue_wiggle_room = clue.len() + 1 - (*right_extent - *left_extent);
 

@@ -347,10 +347,9 @@ impl eframe::App for NonogramGui {
                                 skims,
                                 scrubs,
                                 cells_left,
-                                solution,
+                                solution: _solution,
                                 solved_mask,
                             }) => {
-                                self.picture = solution;
                                 self.solve_report = format!("{}/{}/{}", skims, scrubs, cells_left);
                                 self.solved_mask = solved_mask;
                             }
