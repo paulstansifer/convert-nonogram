@@ -6,7 +6,7 @@ use ndarray::{ArrayView1, ArrayViewMut1};
 
 use crate::{
     line_solve::{scrub_heuristic, scrub_line, skim_heuristic, skim_line, Cell},
-    puzzle::{Clue, Puzzle},
+    puzzle::{Clue, Color, Puzzle, Solution, BACKGROUND},
 };
 
 type Grid = ndarray::Array2<Cell>;
@@ -15,6 +15,7 @@ pub struct Report {
     pub skims: usize,
     pub scrubs: usize,
     pub cells_left: usize,
+    pub solution: Solution,
     pub solved_mask: Vec<Vec<bool>>,
 }
 
@@ -144,6 +145,22 @@ fn grid_to_solved_mask<C: Clue>(grid: &Grid) -> Vec<Vec<bool>> {
         .collect()
 }
 
+fn grid_to_solution<C: Clue>(grid: &Grid, puzzle: &Puzzle<C>) -> Solution {
+    let grid = grid
+        .columns()
+        .into_iter()
+        .map(|col| {
+            col.iter()
+                .map(|cell| cell.known_or().unwrap_or(BACKGROUND))
+                .collect::<Vec<Color>>()
+        })
+        .collect();
+    Solution {
+        grid,
+        palette: puzzle.palette.clone(),
+    }
+}
+
 fn display_step<'a, C: Clue>(
     clue_lane: &'a LaneState<'a, C>,
     orig_lane: Vec<Cell>,
@@ -232,6 +249,7 @@ pub fn solve<C: Clue>(puzzle: &Puzzle<C>, trace_solve: bool) -> anyhow::Result<R
                             skims,
                             scrubs,
                             cells_left,
+                            solution: grid_to_solution::<C>(&grid, puzzle),
                             solved_mask: grid_to_solved_mask::<C>(&grid),
                         });
                     } else {
@@ -301,6 +319,7 @@ pub fn solve<C: Clue>(puzzle: &Puzzle<C>, trace_solve: bool) -> anyhow::Result<R
                 skims,
                 scrubs,
                 cells_left,
+                solution: grid_to_solution::<C>(&grid, puzzle),
                 solved_mask: grid_to_solved_mask::<C>(&grid),
             });
         }

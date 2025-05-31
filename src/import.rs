@@ -3,10 +3,76 @@ use image::{DynamicImage, GenericImageView, Pixel, Rgba};
 use std::{
     char::from_digit,
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
+    io::Read,
     iter::FromIterator,
+    path::PathBuf,
 };
 
-use crate::puzzle::{self, Color, ColorInfo, Corner, Nono, Puzzle, Solution, Triano, BACKGROUND};
+use crate::{
+    puzzle::{
+        self, Clue, Color, ColorInfo, Corner, DynPuzzle, Nono, Puzzle, Solution, Triano, BACKGROUND,
+    },
+    ClueStyle, NonogramFormat,
+};
+
+fn read_path(path: &PathBuf) -> String {
+    let mut res = String::new();
+    if path == &PathBuf::from("-") {
+        std::io::stdin()
+            .read_to_string(&mut res)
+            .expect("bad read_to_string!");
+    } else {
+        res = String::from_utf8(std::fs::read(path).unwrap()).expect("not valid UTF-8!");
+    };
+    res
+}
+
+pub fn load(
+    path: &PathBuf,
+    format: Option<NonogramFormat>,
+    clue_style: ClueStyle,
+) -> (DynPuzzle, Option<Solution>) {
+    let input_format = crate::infer_format(&path, format);
+
+    match input_format {
+        NonogramFormat::Html => {
+            panic!("HTML input is not supported.")
+        }
+        NonogramFormat::Image => {
+            let img = image::open(path).unwrap();
+
+            let solution = image_to_solution(&img);
+
+            (Nono::to_dyn(solution_to_puzzle(&solution)), Some(solution))
+        }
+        NonogramFormat::Webpbn => {
+            let webpbn_string = read_path(&path);
+
+            let puzzle: puzzle::Puzzle<puzzle::Nono> = webpbn_to_puzzle(&webpbn_string);
+
+            (Nono::to_dyn(puzzle), None)
+        }
+        NonogramFormat::CharGrid => {
+            let grid_string = read_path(&path);
+
+            let mut solution = char_grid_to_solution(&grid_string);
+
+            let puzzle = match clue_style {
+                ClueStyle::Nono => Nono::to_dyn(solution_to_puzzle(&solution)),
+                ClueStyle::Triano => {
+                    let puzzle = solution_to_triano_puzzle(&solution);
+
+                    // HACK: We adjusted the palette
+                    solution.palette = puzzle.palette.clone();
+                    Triano::to_dyn(puzzle)
+                }
+            };
+
+            (puzzle, Some(solution))
+        }
+        _ => todo!(),
+    }
+}
 
 pub fn image_to_solution(image: &DynamicImage) -> Solution {
     let (width, height) = image.dimensions();

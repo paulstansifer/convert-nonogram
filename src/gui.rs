@@ -14,6 +14,7 @@ struct NonogramGui {
     clue_style: ClueStyle,
 
     undo_stack: Vec<UndoAction>,
+    redo_stack: Vec<UndoAction>,
 
     auto_solve: bool,
     solve_report: String,
@@ -26,12 +27,12 @@ enum UndoAction {
     ChangeColor {
         x: usize,
         y: usize,
-        new_color: Color,
+        old_color: Color,
     },
 }
 
 impl NonogramGui {
-    fn new(cc: &eframe::CreationContext<'_>, picture: Solution, clue_style: ClueStyle) -> Self {
+    fn new(_cc: &eframe::CreationContext<'_>, picture: Solution, clue_style: ClueStyle) -> Self {
         let solved_mask = vec![vec![false; picture.grid[0].len()]; picture.grid.len()];
 
         // Customize egui here with cc.egui_ctx.set_fonts and cc.egui_ctx.set_visuals.
@@ -45,6 +46,7 @@ impl NonogramGui {
             clue_style,
 
             undo_stack: vec![],
+            redo_stack: vec![],
 
             auto_solve: false,
             solve_report: "".to_string(),
@@ -186,6 +188,12 @@ impl NonogramGui {
                     let y = canvas_pos.y as usize;
 
                     if (0..x_size).contains(&x) && (0..y_size).contains(&y) {
+                        self.undo_stack.push(UndoAction::ChangeColor {
+                            x,
+                            y,
+                            old_color: self.picture.grid[x][y],
+                        });
+
                         if self.picture.grid[x][y] != self.current_color {
                             self.picture.grid[x][y] = self.current_color;
                         } else {
@@ -239,6 +247,39 @@ impl NonogramGui {
             response
         });
     }
+
+    fn un_or_re_do(&mut self, un: bool) {
+        let action = if un {
+            self.undo_stack.pop()
+        } else {
+            self.redo_stack.pop()
+        };
+
+        if let Some(action) = action {
+            match action {
+                UndoAction::ChangeColor { x, y, old_color } => {
+                    let reversed_action = UndoAction::ChangeColor {
+                        x,
+                        y,
+                        old_color: self.picture.grid[x][y],
+                    };
+
+                    self.picture.grid[x][y] = old_color;
+                    println!(
+                        "Undoing color change at ({}, {}): {:?} -> {:?}",
+                        x, y, self.picture.grid[x][y], old_color
+                    );
+
+                    if un {
+                        self.redo_stack.push(reversed_action);
+                    } else {
+                        self.undo_stack.push(reversed_action);
+                    }
+                    self.report_stale = true;
+                }
+            }
+        }
+    }
 }
 
 impl eframe::App for NonogramGui {
@@ -258,6 +299,36 @@ impl eframe::App for NonogramGui {
                 if ui.button("-").clicked() || ui.input(|i| i.key_pressed(egui::Key::Minus)) {
                     self.scale = (self.scale - 2.0).max(1.0);
                 }
+                if ui.button("Undo").clicked() || ui.input(|i| i.key_pressed(egui::Key::Z)) {
+                    self.un_or_re_do(true);
+                }
+                if ui.button("Redo").clicked() || ui.input(|i| i.key_pressed(egui::Key::Y)) {
+                    self.un_or_re_do(false);
+                }
+                if ui.button("load").clicked() {
+                    if let Some(path) = rfd::FileDialog::new()
+                        .add_filter("image", &["png", "gif", "bmp"])
+                        .add_filter("PBN", &["xml", "pbn"])
+                        .add_filter("chargrid", &["txt"])
+                        .add_filter("chargrid (triano)", &["txt"])
+                        .add_filter("Olsak", &["g"])
+                        .pick_file()
+                    {
+                        let (puzzle, solution) = crate::import::load(&path, None, ClueStyle::Nono);
+                        self.solved_mask =
+                            vec![vec![false; self.picture.grid[0].len()]; self.picture.grid.len()];
+
+                        let solution = solution.unwrap_or_else(|| match puzzle.solve(false) {
+                            Ok(report) => {
+                                self.solved_mask = report.solved_mask;
+                                report.solution
+                            }
+                            Err(_) => panic!("Impossible puzzle!"),
+                        });
+                        self.picture = solution;
+                        self.report_stale = true;
+                    }
+                }
             });
 
             ui.horizontal(|ui| {
@@ -276,8 +347,10 @@ impl eframe::App for NonogramGui {
                                 skims,
                                 scrubs,
                                 cells_left,
+                                solution,
                                 solved_mask,
                             }) => {
+                                self.picture = solution;
                                 self.solve_report = format!("{}/{}/{}", skims, scrubs, cells_left);
                                 self.solved_mask = solved_mask;
                             }
