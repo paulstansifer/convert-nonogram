@@ -22,5 +22,18 @@ regex = "1.11.1"
 roxmltree = "0.20.0"
 axohtml = "0.5.0"
 indicatif = "0.17.11"
-egui = "0.31.1"
-eframe = "0.31.1"
+egui = "0.14.0"
+eframe = "0.14.0"
+# Manually adding other eframe ecosystem crates at 0.14.0
+# as direct dependencies to ensure version consistency.
+epi = "0.14.0"
+egui_glium = "0.14.0"
+# egui_web is not typically a direct dependency for native apps,
+# but if it's being used, it should be pinned.
+# For now, assuming it's not directly needed unless errors show up.
+# egui_web = "0.14.0",
+epaint = "0.14.0"
+emath = "0.14.0"
+
+# Removing specific eframe features for now, using defaults for 0.14.0
+# eframe = { version = "0.19.0", default-features = false, features = ["wgpu"] }

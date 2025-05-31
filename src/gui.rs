@@ -11,9 +11,10 @@ struct NonogramGui {
     picture: Solution,
     current_color: Color,
     scale: f32,
-    clue_style: ClueStyle,
+    // clue_style: ClueStyle, // Removed
 
     undo_stack: Vec<UndoAction>,
+    redo_stack: Vec<UndoAction>, // Added redo_stack
 
     auto_solve: bool,
     solve_report: String,
@@ -31,7 +32,7 @@ enum UndoAction {
 }
 
 impl NonogramGui {
-    fn new(cc: &eframe::CreationContext<'_>, picture: Solution, clue_style: ClueStyle) -> Self {
+    fn new(cc: &eframe::CreationContext<'_>, picture: Solution /*, clue_style: ClueStyle*/) -> Self { // Removed clue_style parameter
         let solved_mask = vec![vec![false; picture.grid[0].len()]; picture.grid.len()];
 
         // Customize egui here with cc.egui_ctx.set_fonts and cc.egui_ctx.set_visuals.
@@ -42,9 +43,10 @@ impl NonogramGui {
             picture,
             current_color: BACKGROUND,
             scale: 10.0,
-            clue_style,
+            // clue_style, // Removed
 
             undo_stack: vec![],
+            redo_stack: vec![], // Initialize redo_stack
 
             auto_solve: false,
             solve_report: "".to_string(),
@@ -186,9 +188,15 @@ impl NonogramGui {
                     let y = canvas_pos.y as usize;
 
                     if (0..x_size).contains(&x) && (0..y_size).contains(&y) {
-                        if self.picture.grid[x][y] != self.current_color {
+                        let old_color = self.picture.grid[x][y];
+                        if old_color != self.current_color {
+                            let undo_action = UndoAction::ChangeColor { x, y, new_color: old_color };
+                            self.undo_stack.push(undo_action);
                             self.picture.grid[x][y] = self.current_color;
                         } else {
+                            // Even if the color is already BACKGROUND, we might want to undo to the previous color
+                            let undo_action = UndoAction::ChangeColor { x, y, new_color: old_color };
+                            self.undo_stack.push(undo_action);
                             self.picture.grid[x][y] = BACKGROUND;
                         }
                     }
@@ -239,8 +247,29 @@ impl eframe::App for NonogramGui {
                 ui.vertical(|ui| {
                     self.palette_editor(ui);
                     ui.checkbox(&mut self.auto_solve, "auto-solve");
+
+                    if ui.button("Undo").clicked() {
+                        if let Some(UndoAction::ChangeColor { x, y, new_color }) = self.undo_stack.pop() {
+                            let current_color_before_undo = self.picture.grid[x][y];
+                            self.picture.grid[x][y] = new_color; // Apply undo
+                            let redo_action = UndoAction::ChangeColor { x, y, new_color: current_color_before_undo };
+                            self.redo_stack.push(redo_action);
+                            self.report_stale = true;
+                        }
+                    }
+
+                    if ui.button("Redo").clicked() {
+                        if let Some(UndoAction::ChangeColor { x, y, new_color }) = self.redo_stack.pop() {
+                            let current_color_before_redo = self.picture.grid[x][y];
+                            self.picture.grid[x][y] = new_color; // Apply redo
+                            let undo_action = UndoAction::ChangeColor { x, y, new_color: current_color_before_redo };
+                            self.undo_stack.push(undo_action);
+                            self.report_stale = true;
+                        }
+                    }
+
                     if ui.button("Solve").clicked() || (self.auto_solve && self.report_stale) {
-                        let puzzle = if self.clue_style == ClueStyle::Triano {
+                        let puzzle = if false { // Replaced self.clue_style == ClueStyle::Triano with false
                             Triano::to_dyn(solution_to_triano_puzzle(&self.picture))
                         } else {
                             Nono::to_dyn(solution_to_puzzle(&self.picture))
@@ -277,7 +306,7 @@ impl eframe::App for NonogramGui {
     }
 }
 
-pub fn edit_image(puzzle: &mut Solution, clue_style: ClueStyle) {
+pub fn edit_image(puzzle: &mut Solution /*, clue_style: ClueStyle*/) { // Removed clue_style parameter
     let native_options = eframe::NativeOptions::default();
     eframe::run_native(
         "Puzzle Editor",
@@ -288,7 +317,7 @@ pub fn edit_image(puzzle: &mut Solution, clue_style: ClueStyle) {
                 ..Style::default()
             };
             cc.egui_ctx.set_style(style);
-            Ok(Box::new(NonogramGui::new(cc, puzzle.clone(), clue_style)))
+            Ok(Box::new(NonogramGui::new(cc, puzzle.clone()))) // Removed clue_style argument
         }),
     )
     .unwrap()

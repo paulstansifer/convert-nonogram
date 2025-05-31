@@ -13,6 +13,14 @@ use clap::Parser;
 use import::{quality_check, webpbn_to_puzzle};
 use puzzle::{Clue, Nono, Solution, Triano};
 
+// Removed ClueStyle enum
+// #[derive(Clone, Copy, Debug, clap::ValueEnum, Default, PartialEq, Eq)]
+// enum ClueStyle {
+// #[default]
+// Nono,
+// Triano,
+// }
+
 #[derive(Clone, Copy, Debug, clap::ValueEnum, Default, PartialEq, Eq)]
 enum NonogramFormat {
     #[default]
@@ -60,8 +68,8 @@ struct Args {
     trace_solve: bool,
 
     /// Clue style (currently only meaningful for CharGrid input)
-    #[arg(long, value_enum, default_value_t)]
-    clue_style: ClueStyle,
+    // #[arg(long, value_enum, default_value_t)] // Removed clue_style
+    // clue_style: ClueStyle,
 
     /// Opens the GUI editor
     #[arg(long, default_value_t)]
@@ -126,16 +134,18 @@ fn main() -> std::io::Result<()> {
 
             let mut solution = import::char_grid_to_solution(&grid_string);
 
-            let puzzle = match args.clue_style {
-                ClueStyle::Nono => Nono::to_dyn(import::solution_to_puzzle(&solution)),
-                ClueStyle::Triano => {
-                    let puzzle = import::solution_to_triano_puzzle(&solution);
-
-                    // HACK: We adjusted the palette
-                    solution.palette = puzzle.palette.clone();
-                    Triano::to_dyn(puzzle)
-                }
-            };
+            // Defaulting to Nono style for CharGrid as ClueStyle is removed
+            let puzzle = Nono::to_dyn(import::solution_to_puzzle(&solution));
+            // let puzzle = match args.clue_style { // Original block removed
+            // ClueStyle::Nono => Nono::to_dyn(import::solution_to_puzzle(&solution)),
+            // ClueStyle::Triano => {
+            // let puzzle = import::solution_to_triano_puzzle(&solution);
+            //
+            // // HACK: We adjusted the palette
+            // solution.palette = puzzle.palette.clone();
+            // Triano::to_dyn(puzzle)
+            // }
+            // };
 
             (puzzle, Some(solution))
         }
@@ -147,7 +157,7 @@ fn main() -> std::io::Result<()> {
     }
 
     if args.gui {
-        gui::edit_image(&mut solution.unwrap(), args.clue_style);
+        gui::edit_image(&mut solution.unwrap()); // Removed args.clue_style
         return Ok(());
     }
 
