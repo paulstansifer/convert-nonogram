@@ -11,30 +11,7 @@ use std::path::PathBuf;
 
 use clap::Parser;
 use import::quality_check;
-
-#[derive(Clone, Copy, Debug, clap::ValueEnum, Default, PartialEq, Eq)]
-pub enum NonogramFormat {
-    #[default]
-    /// Any image supported by the `image` crate (when used as output, infers format from
-    /// extension).
-    Image,
-    /// The widely-used format associated with http://webpbn.com.
-    Webpbn,
-    /// (Export-only.) The format used by the 'olsak' solver.
-    Olsak,
-    /// Informal text format: a grid of characters. Attempts some sensible matching of characters
-    /// to colors, but results will vary. This is the only format that supports Triano puzzles.
-    CharGrid,
-    /// (Export-only.) An HTML representation of a puzzle.
-    Html,
-}
-
-#[derive(Clone, Copy, Debug, clap::ValueEnum, Default, PartialEq, Eq)]
-enum ClueStyle {
-    #[default]
-    Nono,
-    Triano,
-}
+use puzzle::{ClueStyle, NonogramFormat};
 
 #[derive(clap::Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -67,21 +44,6 @@ struct Args {
     gui: bool,
 }
 
-pub fn infer_format(path: &PathBuf, format_arg: Option<NonogramFormat>) -> NonogramFormat {
-    if let Some(format) = format_arg {
-        return format;
-    }
-
-    match path.extension().and_then(|s| s.to_str()) {
-        Some("png") | Some("bmp") | Some("gif") => NonogramFormat::Image,
-        Some("xml") | Some("pbn") => NonogramFormat::Webpbn,
-        Some("g") => NonogramFormat::Olsak,
-        Some("html") => NonogramFormat::Html,
-        Some("txt") => NonogramFormat::CharGrid,
-        _ => NonogramFormat::CharGrid,
-    }
-}
-
 fn main() -> std::io::Result<()> {
     let args = Args::parse();
 
@@ -97,7 +59,7 @@ fn main() -> std::io::Result<()> {
 
     match args.output_path {
         Some(path) => {
-            let output_format = infer_format(&path, args.output_format);
+            let output_format = puzzle::infer_format(&path, args.output_format);
 
             if output_format == NonogramFormat::Image {
                 export::emit_image(&solution.unwrap(), path).unwrap();

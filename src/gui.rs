@@ -3,8 +3,7 @@ use egui::{Color32, Frame, Pos2, Rect, RichText, Shape, Style, Vec2, Visuals};
 use crate::{
     grid_solve,
     import::{solution_to_puzzle, solution_to_triano_puzzle},
-    puzzle::{Clue, Color, ColorInfo, Corner, Nono, Solution, Triano, BACKGROUND},
-    ClueStyle,
+    puzzle::{Clue, ClueStyle, Color, ColorInfo, Corner, Nono, Solution, Triano, BACKGROUND},
 };
 
 struct NonogramGui {

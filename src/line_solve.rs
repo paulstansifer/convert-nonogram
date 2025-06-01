@@ -449,6 +449,8 @@ fn packed_extents<C: Clue + Copy>(
     Ok(extents)
 }
 
+/// Packs all clues to their leftmost and rightmost possible locations. If any squares are
+/// guaranteed to be inside a clue, that's useful information!
 pub fn skim_line<C: Clue + Copy>(
     clues: &[C],
     mut lane: ArrayViewMut1<Cell>,
@@ -915,6 +917,23 @@ fn skim_test() {
     assert_eq!(
         test_skim(n("🟥2 ⬛2"), "🟥⬛⬜ 🟥⬛⬜ 🟥⬛⬜ 🟥⬛⬜ 🟥⬛⬜"),
         l("🟥⬛⬜ 🟥 🟥⬛⬜ ⬛ 🟥⬛⬜")
+    );
+
+    // Test with longer clues
+    assert_eq!(
+        test_skim(n("⬛7"), "🔳 🔳 🔳 🔳 🔳 🔳 🔳 🔳 🔳 🔳"),
+        l("🔳 🔳 🔳 ⬛ ⬛ ⬛ ⬛ 🔳 🔳 🔳")
+    );
+
+    // Test with more clues per line
+    assert_eq!(
+        test_skim(n("⬛1 ⬛1 ⬛1 ⬛1"), "🔳 🔳 🔳 🔳 🔳 🔳 🔳"),
+        l("⬛ ⬜ ⬛ ⬜ ⬛ ⬜ ⬛")
+    );
+
+    assert_eq!(
+        test_skim(n("⬛6"), "⬛ ⬛ 🔳 🔳 ⬛ ⬛"),
+        l("⬛ ⬛ ⬛ ⬛ ⬛ ⬛")
     );
 }
 

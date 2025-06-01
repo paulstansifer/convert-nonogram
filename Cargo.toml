@@ -25,3 +25,10 @@ indicatif = "0.17.11"
 egui = "0.31.1"
 eframe = "0.31.1"
 rfd = "0.15.3"
+
+[dev-dependencies]
+rand = "0.8.5" # Added for fuzzer tests
+
+[[test]]
+name = "solver-fuzzer"
+path = "src/solver_fuzzer.rs"

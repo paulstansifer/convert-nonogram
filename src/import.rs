@@ -8,11 +8,9 @@ use std::{
     path::PathBuf,
 };
 
-use crate::{
-    puzzle::{
-        self, Clue, Color, ColorInfo, Corner, DynPuzzle, Nono, Puzzle, Solution, Triano, BACKGROUND,
-    },
-    ClueStyle, NonogramFormat,
+use crate::puzzle::{
+    self, Clue, ClueStyle, Color, ColorInfo, Corner, DynPuzzle, Nono, NonogramFormat, Puzzle,
+    Solution, Triano, BACKGROUND,
 };
 
 fn read_path(path: &PathBuf) -> String {
@@ -32,7 +30,7 @@ pub fn load(
     format: Option<NonogramFormat>,
     clue_style: ClueStyle,
 ) -> (DynPuzzle, Option<Solution>) {
-    let input_format = crate::infer_format(&path, format);
+    let input_format = puzzle::infer_format(&path, format);
 
     match input_format {
         NonogramFormat::Html => {
