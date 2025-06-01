@@ -631,7 +631,7 @@ pub fn solution_to_puzzle(solution: &Solution) -> Puzzle<Nono> {
     for y in 0..height {
         let mut clues = Vec::<Nono>::new();
 
-        let mut cur_color: Option<Color> = None;
+        let mut prev_color: Option<Color> = None;
         let mut run = 1;
         for x in 0..width + 1 {
             let color = if x < width {
@@ -639,16 +639,16 @@ pub fn solution_to_puzzle(solution: &Solution) -> Puzzle<Nono> {
             } else {
                 None
             };
-            if cur_color == color {
+            if prev_color == color {
                 run += 1;
                 continue;
             }
-            match cur_color {
+            match prev_color {
                 None => {}
                 Some(color) if color == puzzle::BACKGROUND => {}
                 Some(color) => clues.push(Nono { color, count: run }),
             }
-            cur_color = color;
+            prev_color = color;
             run = 1;
         }
         rows.push(clues);
@@ -658,7 +658,7 @@ pub fn solution_to_puzzle(solution: &Solution) -> Puzzle<Nono> {
     for x in 0..width {
         let mut clues = Vec::<Nono>::new();
 
-        let mut cur_color = None;
+        let mut prev_color = None;
         let mut run = 1;
         for y in 0..height + 1 {
             let color = if y < height {
@@ -666,16 +666,16 @@ pub fn solution_to_puzzle(solution: &Solution) -> Puzzle<Nono> {
             } else {
                 None
             };
-            if cur_color == color {
+            if prev_color == color {
                 run += 1;
                 continue;
             }
-            match cur_color {
+            match prev_color {
                 None => {}
                 Some(color) if color == BACKGROUND => {}
                 Some(color) => clues.push(Nono { color, count: run }),
             }
-            cur_color = color;
+            prev_color = color;
             run = 1;
         }
         cols.push(clues);

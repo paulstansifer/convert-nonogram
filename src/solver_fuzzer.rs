@@ -79,9 +79,9 @@ mod tests {
             let solution_line = generate_random_line(line_length, max_colors);
 
             // Create a dummy Solution struct to use solution_to_puzzle
-            let mut grid = vec![vec![BACKGROUND; line_length]];
+            let mut grid = vec![vec![BACKGROUND]; line_length];
             for (j, color) in solution_line.iter().enumerate() {
-                grid[0][j] = *color;
+                grid[j][0] = *color;
             }
             let dummy_solution = Solution {
                 palette: (0..=max_colors)
@@ -105,12 +105,8 @@ mod tests {
             let puzzle = solution_to_puzzle(&dummy_solution);
             let clues = &puzzle.rows[0]; // Get clues for the generated line
 
-            println!("### s {solution_line:?} ");
-
             let mut partial_solution =
                 generate_consistent_partial_solution(&solution_line, max_colors);
-
-            println!("### c {clues:?} | s {partial_solution:?}");
 
             let original_partial_solution = partial_solution.clone();
 
