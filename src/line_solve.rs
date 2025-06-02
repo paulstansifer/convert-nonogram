@@ -465,6 +465,19 @@ pub fn skim_line<C: Clue + Copy>(
         });
     }
 
+    // Rule out colors that don't appear at all in this line.
+    // Saves some scrubbing!
+    let mut possible_colors = Cell::from_color(BACKGROUND);
+    for c in clues {
+        for i in 0..c.len() {
+            possible_colors.actually_could_be(c.color_at(i));
+        }
+    }
+    for i in 0..lane.len() {
+        learn_cell_intersect(possible_colors, &mut lane, i, &mut affected)?;
+    }
+
+    // Now slam the clues back and forth!
     let left_packed_right_extents = packed_extents(clues, &lane, false)?;
     let right_packed_left_extents = packed_extents(clues, &lane, true)?;
 
@@ -926,12 +939,12 @@ fn skim_tri_test() {
     // Perhaps skimming should figure out things based on the known ends of clues?
     assert_eq!(
         test_skim(tri("🮞1"), "🮞⬛🮟⬜ 🮞⬛🮟⬜ 🮞⬛🮟⬜ 🮞⬛🮟⬜"),
-        l("🮞⬛🮟⬜ 🮞⬛🮟⬜ 🮞⬛🮟⬜ 🮞⬛🮟⬜")
+        l("🮞⬛⬜ 🮞⬛⬜ 🮞⬛⬜ 🮞⬛⬜")
     );
 
     assert_eq!(
         test_skim(tri("🮞2"), "🮞⬛🮟⬜ 🮞⬛🮟⬜ 🮞⬛🮟⬜ 🮞⬛🮟⬜"),
-        l("🮞⬛🮟⬜ 🮞⬛ ⬛ 🮞⬛🮟⬜")
+        l("🮞⬛⬜ 🮞⬛ ⬛ 🮞⬛⬜")
     );
 }
 

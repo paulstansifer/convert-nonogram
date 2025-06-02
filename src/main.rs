@@ -110,6 +110,7 @@ fn main() -> std::io::Result<()> {
 }
 
 #[test]
+// This is a consistency test, used to notice when measured difficulties change.
 fn solve_examples() {
     use crate::{grid_solve::Report, import, puzzle::ClueStyle};
     use itertools::Itertools;
@@ -149,7 +150,7 @@ fn solve_examples() {
 
     assert!(report.contains("2:02.png: 167 skims, 16 scrubs, 0 cells left"));
     assert!(report.contains("apron.png: 77 skims, 0 scrubs, 0 cells left"));
-    assert!(report.contains("bill_jeb_and_bob.png: 282 skims, 0 scrubs, 0 cells left"));
+    assert!(report.contains("bill_jeb_and_bob.png: 238 skims, 0 scrubs, 0 cells left"));
     assert!(report.contains("boring_blob.png: 32 skims, 0 scrubs, 0 cells left"));
     assert!(report.contains("boring_blob_large.png: 103 skims, 0 scrubs, 0 cells left"));
     assert!(report.contains("boring_hollow_blob.png: 34 skims, 0 scrubs, 0 cells left"));
@@ -158,18 +159,18 @@ fn solve_examples() {
         report.contains("compact_fluorescent_lightbulb.png: 286 skims, 29 scrubs, 0 cells left")
     );
     assert!(report.contains("ear.png: 231 skims, 22 scrubs, 0 cells left"));
-    assert!(report.contains("fire_submarine.png: 171 skims, 0 scrubs, 0 cells left"));
+    assert!(report.contains("fire_submarine.png: 161 skims, 0 scrubs, 0 cells left"));
     assert!(report.contains("hair_dryer.png: 148 skims, 21 scrubs, 0 cells left"));
-    assert!(report.contains("headphones.png: 396 skims, 9 scrubs, 0 cells left"));
+    assert!(report.contains("headphones.png: 430 skims, 1 scrubs, 0 cells left"));
     assert!(report.contains("keys.png: 62 skims, 0 scrubs, 0 cells left"));
     assert!(report.contains("ladle.png: 20 skims, 0 scrubs, 0 cells left"));
     assert!(report.contains("myst_falling_man.png: 64 skims, 14 scrubs, 0 cells left"));
-    assert!(report.contains("pill_bottles.png: 229 skims, 10 scrubs, 0 cells left"));
-    assert!(report.contains("puzzle_piece.png: 75 skims, 0 scrubs, 0 cells left"));
+    assert!(report.contains("pill_bottles.png: 243 skims, 14 scrubs, 0 cells left"));
+    assert!(report.contains("puzzle_piece.png: 73 skims, 0 scrubs, 0 cells left"));
     assert!(report.contains("ringed_planet.png: 158 skims, 22 scrubs, 0 cells left"));
-    assert!(report.contains("shirt_and_tie.png: 400 skims, 32 scrubs, 0 cells left"));
-    assert!(report.contains("shirt_and_tie_no_button.png: 294 skims, 68 scrubs, 246 cells left"));
-    assert!(report.contains("skid_steer.png: 193 skims, 0 scrubs, 0 cells left"));
+    assert!(report.contains("shirt_and_tie.png: 323 skims, 27 scrubs, 0 cells left"));
+    assert!(report.contains("shirt_and_tie_no_button.png: 199 skims, 45 scrubs, 246 cells left"));
+    assert!(report.contains("skid_steer.png: 209 skims, 1 scrubs, 0 cells left"));
     assert!(report.contains("sunglasses.png: 186 skims, 23 scrubs, 0 cells left"));
     assert!(report.contains("tandem_stationary_bike.png: 365 skims, 50 scrubs, 0 cells left"));
     assert!(report.contains("tea.png: 100 skims, 0 scrubs, 0 cells left"));
@@ -181,5 +182,5 @@ fn solve_examples() {
     assert!(report.contains("usb_type_a.png: 319 skims, 50 scrubs, 0 cells left"));
     assert!(report.contains("usb_type_a_no_emblem.png: 326 skims, 79 scrubs, 0 cells left"));
 
-    //assert_eq!(report.lines().collect::<Vec<_>>().len(), 0);
+    assert_eq!(report.lines().collect::<Vec<_>>().len(), 31);
 }
