@@ -153,7 +153,7 @@ impl Debug for Triano {
     }
 }
 
-#[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
+#[derive(PartialEq, Eq, Clone, Copy, Hash, Debug, PartialOrd, Ord)]
 pub struct Color(pub u8);
 
 pub static BACKGROUND: Color = Color(0);

@@ -113,7 +113,14 @@ impl NonogramGui {
         let mut removed_color = None;
         let mut add_color = false;
 
-        for (color, color_info) in self.picture.palette.iter_mut() {
+        use itertools::Itertools;
+
+        for (color, color_info) in self
+            .picture
+            .palette
+            .iter_mut()
+            .sorted_by_key(|(color, _)| *color)
+        {
             let (r, g, b) = color_info.rgb;
             let button_text = if color_info.corner.is_some() {
                 color_info.ch.to_string()
@@ -153,6 +160,11 @@ impl NonogramGui {
         if ui.button("new color").clicked() {
             add_color = true;
         }
+        self.current_color = picked_color;
+
+        if Some(self.current_color) == removed_color {
+            self.current_color = BACKGROUND;
+        }
 
         if let Some(removed_color) = removed_color {
             for row in self.picture.grid.iter_mut() {
@@ -178,8 +190,6 @@ impl NonogramGui {
                 },
             );
         }
-
-        self.current_color = picked_color;
     }
 
     fn canvas(&mut self, ui: &mut egui::Ui) {
