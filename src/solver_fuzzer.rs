@@ -10,7 +10,7 @@ mod puzzle;
 #[cfg(test)]
 mod tests {
     use crate::import::solution_to_puzzle;
-    use crate::line_solve::{skim_line, Cell};
+    use crate::line_solve::{scrub_line, skim_line, Cell};
     use crate::puzzle::{Color, Solution, BACKGROUND};
     use ndarray::Array1;
     use rand::{Rng, SeedableRng};
@@ -68,7 +68,7 @@ mod tests {
     }
 
     #[test]
-    fn fuzzer_test_skim_line() {
+    fn fuzzer() {
         let mut rng = rand::rngs::StdRng::seed_from_u64(0);
         let num_fuzz_cases = 1000;
         let max_line_length = 25;
@@ -105,19 +105,19 @@ mod tests {
                 let puzzle = solution_to_puzzle(&dummy_solution);
                 let clues = &puzzle.rows[0]; // Get clues for the generated line
 
-                let mut partial_solution =
+                let original_partial_solution =
                     generate_consistent_partial_solution(&solution_line, max_colors);
+                let mut sc_partial_solution = original_partial_solution.clone();
+                let mut sk_partial_solution = original_partial_solution.clone();
 
-                let original_partial_solution = partial_solution.clone();
-
-                match skim_line(clues, partial_solution.view_mut()) {
+                match skim_line(clues, sk_partial_solution.view_mut()) {
                     Ok(_) => {
                         // Check for inconsistencies
                         for j in 0..line_length {
-                            if !partial_solution[j].can_be(solution_line[j]) {
+                            if !sk_partial_solution[j].can_be(solution_line[j]) {
                                 panic!(
                                 "Fuzz case {}: skim_line deduced inconsistency at index {}.  Clues: {:?}. Original line: {:?}, Partial solution before skim: {:?}, Partial solution after skim: {:?}",
-                                i, j, clues, solution_line, original_partial_solution, partial_solution
+                                i, j, clues, solution_line, original_partial_solution, sk_partial_solution
                             );
                             }
                         }
@@ -126,6 +126,27 @@ mod tests {
                         // Check for solver-identified inconsistencies.
                         panic!(
                         "Fuzz case {}: skim_line returned an error: {}. Original line: {:?}, Partial solution before skim: {:?}",
+                        i, e, solution_line, original_partial_solution
+                    );
+                    }
+                }
+
+                match scrub_line(clues, sc_partial_solution.view_mut()) {
+                    Ok(_) => {
+                        // Check for inconsistencies
+                        for j in 0..line_length {
+                            if !sc_partial_solution[j].can_be(solution_line[j]) {
+                                panic!(
+                                "Fuzz case {}: scrub_line deduced inconsistency at index {}.  Clues: {:?}. Original line: {:?}, Partial solution before skim: {:?}, Partial solution after skim: {:?}",
+                                i, j, clues, solution_line, original_partial_solution, sc_partial_solution
+                            );
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        // Check for solver-identified inconsistencies.
+                        panic!(
+                        "Fuzz case {}: scrub_line returned an error: {}. Original line: {:?}, Partial solution before skim: {:?}",
                         i, e, solution_line, original_partial_solution
                     );
                     }
