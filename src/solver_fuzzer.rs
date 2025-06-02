@@ -13,7 +13,7 @@ mod tests {
     use crate::line_solve::{skim_line, Cell};
     use crate::puzzle::{Color, Solution, BACKGROUND};
     use ndarray::Array1;
-    use rand::Rng;
+    use rand::{Rng, SeedableRng};
 
     fn generate_random_line(length: usize, num_colors: u8) -> Vec<Color> {
         let mut rng = rand::thread_rng();
@@ -69,65 +69,66 @@ mod tests {
 
     #[test]
     fn fuzzer_test_skim_line() {
-        let mut rng = rand::thread_rng();
-        let num_fuzz_cases = 100;
-        let max_line_length = 20;
-        let max_colors = 5; // Including background
+        let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+        let num_fuzz_cases = 1000;
+        let max_line_length = 25;
 
         for i in 0..num_fuzz_cases {
-            let line_length = rng.gen_range(1..=max_line_length);
-            let solution_line = generate_random_line(line_length, max_colors);
+            for max_colors in 2..=5 {
+                let line_length = rng.gen_range(1..=max_line_length);
+                let solution_line = generate_random_line(line_length, max_colors);
 
-            // Create a dummy Solution struct to use solution_to_puzzle
-            let mut grid = vec![vec![BACKGROUND]; line_length];
-            for (j, color) in solution_line.iter().enumerate() {
-                grid[j][0] = *color;
-            }
-            let dummy_solution = Solution {
-                palette: (0..=max_colors)
-                    .map(|i| {
-                        let color = Color(i);
-                        (
-                            color,
-                            crate::puzzle::ColorInfo {
-                                ch: ' ', // Dummy char
-                                name: format!("color_{}", i),
-                                rgb: (0, 0, 0), // Dummy rgb
+                // Create a dummy Solution struct to use solution_to_puzzle
+                let mut grid = vec![vec![BACKGROUND]; line_length];
+                for (j, color) in solution_line.iter().enumerate() {
+                    grid[j][0] = *color;
+                }
+                let dummy_solution = Solution {
+                    palette: (0..=max_colors)
+                        .map(|i| {
+                            let color = Color(i);
+                            (
                                 color,
-                                corner: None,
-                            },
-                        )
-                    })
-                    .collect(),
-                grid,
-            };
+                                crate::puzzle::ColorInfo {
+                                    ch: ' ', // Dummy char
+                                    name: format!("color_{}", i),
+                                    rgb: (0, 0, 0), // Dummy rgb
+                                    color,
+                                    corner: None,
+                                },
+                            )
+                        })
+                        .collect(),
+                    grid,
+                };
 
-            let puzzle = solution_to_puzzle(&dummy_solution);
-            let clues = &puzzle.rows[0]; // Get clues for the generated line
+                let puzzle = solution_to_puzzle(&dummy_solution);
+                let clues = &puzzle.rows[0]; // Get clues for the generated line
 
-            let mut partial_solution =
-                generate_consistent_partial_solution(&solution_line, max_colors);
+                let mut partial_solution =
+                    generate_consistent_partial_solution(&solution_line, max_colors);
 
-            let original_partial_solution = partial_solution.clone();
+                let original_partial_solution = partial_solution.clone();
 
-            match skim_line(clues, partial_solution.view_mut()) {
-                Ok(_) => {
-                    // Check for inconsistencies
-                    for j in 0..line_length {
-                        if !partial_solution[j].can_be(solution_line[j]) {
-                            panic!(
-                                "Fuzz case {}: skim_line deduced inconsistency at index {}. Original line: {:?}, Partial solution before skim: {:?}, Partial solution after skim: {:?}",
-                                i, j, solution_line, original_partial_solution, partial_solution
+                match skim_line(clues, partial_solution.view_mut()) {
+                    Ok(_) => {
+                        // Check for inconsistencies
+                        for j in 0..line_length {
+                            if !partial_solution[j].can_be(solution_line[j]) {
+                                panic!(
+                                "Fuzz case {}: skim_line deduced inconsistency at index {}.  Clues: {:?}. Original line: {:?}, Partial solution before skim: {:?}, Partial solution after skim: {:?}",
+                                i, j, clues, solution_line, original_partial_solution, partial_solution
                             );
+                            }
                         }
                     }
-                }
-                Err(e) => {
-                    // Check for solver-identified inconsistencies.
-                    panic!(
+                    Err(e) => {
+                        // Check for solver-identified inconsistencies.
+                        panic!(
                         "Fuzz case {}: skim_line returned an error: {}. Original line: {:?}, Partial solution before skim: {:?}",
                         i, e, solution_line, original_partial_solution
                     );
+                    }
                 }
             }
         }

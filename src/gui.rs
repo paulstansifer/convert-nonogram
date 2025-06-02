@@ -311,6 +311,7 @@ impl eframe::App for NonogramGui {
                         .add_filter("chargrid", &["txt"])
                         .add_filter("chargrid (triano)", &["txt"])
                         .add_filter("Olsak", &["g"])
+                        .set_directory(".")
                         .pick_file()
                     {
                         let (puzzle, solution) = crate::import::load(&path, None, ClueStyle::Nono);
