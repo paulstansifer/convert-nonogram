@@ -325,12 +325,6 @@ impl eframe::App for NonogramGui {
                 if ui.button("-").clicked() || ui.input(|i| i.key_pressed(egui::Key::Minus)) {
                     self.scale = (self.scale - 2.0).max(1.0);
                 }
-                if ui.button("Undo").clicked() || ui.input(|i| i.key_pressed(egui::Key::Z)) {
-                    self.un_or_re_do(true);
-                }
-                if ui.button("Redo").clicked() || ui.input(|i| i.key_pressed(egui::Key::Y)) {
-                    self.un_or_re_do(false);
-                }
                 if ui.button("load").clicked() {
                     if let Some(path) = rfd::FileDialog::new()
                         .add_filter("image", &["png", "gif", "bmp"])
@@ -360,6 +354,15 @@ impl eframe::App for NonogramGui {
 
             ui.horizontal(|ui| {
                 ui.vertical(|ui| {
+                    ui.horizontal(|ui| {
+                        if ui.button("⟲").clicked() || ui.input(|i| i.key_pressed(egui::Key::Z)) {
+                            self.un_or_re_do(true);
+                        }
+                        if ui.button("⟳").clicked() || ui.input(|i| i.key_pressed(egui::Key::Y)) {
+                            self.un_or_re_do(false);
+                        }
+                    });
+
                     self.palette_editor(ui);
                     ui.checkbox(&mut self.auto_solve, "auto-solve");
                     if ui.button("Solve").clicked() || (self.auto_solve && self.report_stale) {
