@@ -110,52 +110,76 @@ fn cell_shape(
 impl NonogramGui {
     fn palette_editor(&mut self, ui: &mut egui::Ui) {
         let mut picked_color = self.current_color;
-        let mut new_color_rgb = None;
+        let mut removed_color = None;
+        let mut add_color = false;
 
-        for (color, color_info) in &self.picture.palette {
-            let (r, g, b) = &color_info.rgb;
+        for (color, color_info) in self.picture.palette.iter_mut() {
+            let (r, g, b) = color_info.rgb;
+            let button_text = if color_info.corner.is_some() {
+                color_info.ch.to_string()
+            } else {
+                "■".to_string()
+            };
 
             ui.horizontal(|ui| {
                 if ui
                     .button(
-                        RichText::new(if color_info.corner.is_some() {
-                            color_info.ch.to_string()
-                        } else {
-                            "■".to_string()
-                        })
-                        .monospace()
-                        .color(egui::Color32::from_rgb(*r, *g, *b)),
+                        RichText::new(button_text)
+                            .monospace()
+                            .size(24.0)
+                            .color(egui::Color32::from_rgb(r, g, b)),
                     )
                     .clicked()
                 {
                     picked_color = *color;
                 };
-                let mut edited_color = [*r as f32 / 256.0, *g as f32 / 256.0, *b as f32 / 256.0];
+                let mut edited_color = [r as f32 / 256.0, g as f32 / 256.0, b as f32 / 256.0];
 
-                if ui
-                    .color_edit_button_rgb(&mut edited_color)
-                    .on_hover_text("Click to change color")
-                    .changed()
-                {
+                if ui.color_edit_button_rgb(&mut edited_color).changed() {
                     picked_color = *color;
-                    new_color_rgb = Some(edited_color);
+                    color_info.rgb = (
+                        (edited_color[0] * 256.0) as u8,
+                        (edited_color[1] * 256.0) as u8,
+                        (edited_color[2] * 256.0) as u8,
+                    );
+                }
+                if *color != BACKGROUND {
+                    if ui.button("⊗").clicked() {
+                        removed_color = Some(*color);
+                    }
                 }
             });
         }
+        if ui.button("new color").clicked() {
+            add_color = true;
+        }
+
+        if let Some(removed_color) = removed_color {
+            for row in self.picture.grid.iter_mut() {
+                for cell in row.iter_mut() {
+                    if *cell == removed_color {
+                        *cell = self.current_color;
+                    }
+                }
+            }
+
+            self.picture.palette.remove(&removed_color);
+        }
+        if add_color {
+            let next_color = Color(self.picture.palette.keys().map(|k| k.0).max().unwrap() + 1);
+            self.picture.palette.insert(
+                next_color,
+                ColorInfo {
+                    ch: (next_color.0 + 65) as char, // TODO: will break chargrid export
+                    name: "New color".to_string(),
+                    rgb: (128, 128, 128),
+                    color: next_color,
+                    corner: None,
+                },
+            );
+        }
 
         self.current_color = picked_color;
-        if let Some(new_color_rgb) = new_color_rgb {
-            self.picture
-                .palette
-                .entry(picked_color)
-                .and_modify(|color_info| {
-                    color_info.rgb = (
-                        (new_color_rgb[0] * 256.0) as u8,
-                        (new_color_rgb[1] * 256.0) as u8,
-                        (new_color_rgb[2] * 256.0) as u8,
-                    );
-                });
-        }
     }
 
     fn canvas(&mut self, ui: &mut egui::Ui) {
@@ -261,10 +285,6 @@ impl NonogramGui {
                     };
 
                     self.picture.grid[x][y] = old_color;
-                    println!(
-                        "Undoing color change at ({}, {}): {:?} -> {:?}",
-                        x, y, self.picture.grid[x][y], old_color
-                    );
 
                     if un {
                         self.redo_stack.push(reversed_action);
@@ -377,8 +397,14 @@ pub fn edit_image(puzzle: &mut Solution, clue_style: ClueStyle) {
         "Puzzle Editor",
         native_options,
         Box::new(|cc| {
+            let spacing = egui::Spacing {
+                interact_size: Vec2::new(20.0, 20.0), // Used by the color-picker buttons
+                ..egui::Spacing::default()
+            };
             let style = Style {
                 visuals: Visuals::light(),
+                spacing,
+
                 ..Style::default()
             };
             cc.egui_ctx.set_style(style);
