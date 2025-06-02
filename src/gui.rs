@@ -309,14 +309,11 @@ impl eframe::App for NonogramGui {
                         .add_filter("image", &["png", "gif", "bmp"])
                         .add_filter("PBN", &["xml", "pbn"])
                         .add_filter("chargrid", &["txt"])
-                        .add_filter("chargrid (triano)", &["txt"])
                         .add_filter("Olsak", &["g"])
                         .set_directory(".")
                         .pick_file()
                     {
                         let (puzzle, solution) = crate::import::load(&path, None, ClueStyle::Nono);
-                        self.solved_mask =
-                            vec![vec![false; self.picture.grid[0].len()]; self.picture.grid.len()];
 
                         let solution = solution.unwrap_or_else(|| match puzzle.solve(false) {
                             Ok(report) => {
@@ -325,6 +322,9 @@ impl eframe::App for NonogramGui {
                             }
                             Err(_) => panic!("Impossible puzzle!"),
                         });
+                        self.solved_mask =
+                            vec![vec![false; solution.grid[0].len()]; solution.grid.len()];
+
                         self.picture = solution;
                         self.report_stale = true;
                     }
