@@ -7,7 +7,8 @@ use crate::puzzle::{Clue, Color, Puzzle, BACKGROUND};
 use anyhow::{bail, Context};
 use ndarray::{ArrayView1, ArrayViewMut1};
 
-// type ClueSlice = Vec<Clue>;
+// We might want to switch from `Result<>` to `Option<>`, because currently scrubbing generates and
+// discards a lot of error text!
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Cell {
@@ -385,14 +386,12 @@ fn packed_extents<C: Clue + Copy>(
                 let cur = lane_at(possible_pos);
 
                 if !cur.can_be(clue_color_at(clue, clue_idx)) {
-                    println!("clue {clue:?} at {possible_pos} is impossible: {cur:?} (clue index {clue_idx})");
                     pos += 1;
                     placeable = false;
                     break;
                 }
             }
         }
-        println!("clue {clue:?} placed at {pos} to {}", pos + clue.len() - 1);
         extents.push(pos + clue.len() - 1);
         pos += clue.len();
         last_clue = Some(*clue);
@@ -469,20 +468,6 @@ pub fn skim_line<C: Clue + Copy>(
     let left_packed_right_extents = packed_extents(clues, &lane, false)?;
     let right_packed_left_extents = packed_extents(clues, &lane, true)?;
 
-    println!(
-        "left packed extents: {:?}, right packed extents: {:?}",
-        left_packed_right_extents, right_packed_left_extents
-    );
-
-    for i in 0..(clues.len() - 1) {
-        println!(
-            "clues {:?} vs {:?} MBS: {}",
-            clues[i],
-            clues[i + 1],
-            clues[i].must_be_separated_from(&clues[i + 1])
-        );
-    }
-
     for ((gap_before, clue, gap_after), (left_extent, right_extent)) in ClueAdjIterator::new(clues)
         .zip(
             right_packed_left_extents
@@ -493,12 +478,11 @@ pub fn skim_line<C: Clue + Copy>(
         if left_extent > right_extent {
             continue; // No overlap
         }
-        println!(
-            "clue {:?} at left {} right {} ... lane is {:?}. {gap_before} before, {gap_after} after",
-            clue, left_extent, right_extent, lane
-        );
+        if (*right_extent - *left_extent + 1) > clue.len() {
+            bail!("clue is insufficiently long");
+        }
 
-        let clue_wiggle_room = clue.len() + 1 - (*right_extent - *left_extent);
+        let clue_wiggle_room = clue.len() - 1 - (*right_extent - *left_extent);
 
         for idx in (*left_extent)..=(*right_extent) {
             let mut clue_cell = Cell::new_impossible();
