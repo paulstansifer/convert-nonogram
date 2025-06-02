@@ -164,19 +164,16 @@ impl NonogramGui {
 
         Frame::canvas(ui.style()).show(ui, |ui| {
             let (mut response, painter) = ui.allocate_painter(
-                egui::Vec2::new(self.scale * x_size as f32, self.scale * y_size as f32),
+                Vec2::new(self.scale * x_size as f32, self.scale * y_size as f32)
+                    + Vec2::new(2.0, 2.0), // for the border
                 egui::Sense::click_and_drag(),
             );
 
+            let canvas_without_border = response.rect.shrink(1.0);
+
             let to_screen = egui::emath::RectTransform::from_to(
-                Rect::from_min_size(
-                    Pos2::ZERO,
-                    Vec2::new(
-                        self.picture.grid.len() as f32,
-                        self.picture.grid.first().unwrap().len() as f32,
-                    ),
-                ),
-                response.rect,
+                Rect::from_min_size(Pos2::ZERO, Vec2::new(x_size as f32, y_size as f32)),
+                canvas_without_border,
             );
             let from_screen = to_screen.inverse();
 
