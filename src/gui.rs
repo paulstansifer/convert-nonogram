@@ -354,6 +354,7 @@ impl eframe::App for NonogramGui {
 
             ui.horizontal(|ui| {
                 ui.vertical(|ui| {
+                    ui.set_width(100.0);
                     ui.horizontal(|ui| {
                         if ui.button("⟲").clicked() || ui.input(|i| i.key_pressed(egui::Key::Z)) {
                             self.un_or_re_do(true);
@@ -363,7 +364,11 @@ impl eframe::App for NonogramGui {
                         }
                     });
 
+                    ui.separator();
+
                     self.palette_editor(ui);
+
+                    ui.separator();
                     ui.checkbox(&mut self.auto_solve, "auto-solve");
                     if ui.button("Solve").clicked() || (self.auto_solve && self.report_stale) {
                         let puzzle = if self.clue_style == ClueStyle::Triano {
