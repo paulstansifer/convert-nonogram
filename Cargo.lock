@@ -898,6 +898,7 @@ dependencies = [
  "colorize",
  "eframe",
  "egui",
+ "egui_material_icons",
  "image 0.23.11",
  "indicatif",
  "indoc",
@@ -1275,6 +1276,15 @@ dependencies = [
  "wasm-bindgen",
  "web-sys",
  "winit",
+]
+
+[[package]]
+name = "egui_material_icons"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3a8fbdd1ecd47e2308795f3a79fc3b61456191b9276766b0009d9bcff72330ad"
+dependencies = [
+ "egui",
 ]
 
 [[package]]

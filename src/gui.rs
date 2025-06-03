@@ -1,10 +1,10 @@
-use egui::{Color32, Frame, Pos2, Rect, RichText, Shape, Style, Vec2, Visuals};
-
 use crate::{
     grid_solve,
     import::{solution_to_puzzle, solution_to_triano_puzzle},
     puzzle::{Clue, ClueStyle, Color, ColorInfo, Corner, Nono, Solution, Triano, BACKGROUND},
 };
+use egui::{Color32, Frame, Pos2, Rect, RichText, Shape, Style, Vec2, Visuals};
+use egui_material_icons::icons;
 
 struct NonogramGui {
     picture: Solution,
@@ -31,7 +31,8 @@ enum UndoAction {
 }
 
 impl NonogramGui {
-    fn new(_cc: &eframe::CreationContext<'_>, picture: Solution, clue_style: ClueStyle) -> Self {
+    fn new(cc: &eframe::CreationContext<'_>, picture: Solution, clue_style: ClueStyle) -> Self {
+        egui_material_icons::initialize(&cc.egui_ctx);
         let solved_mask = vec![vec![false; picture.grid[0].len()]; picture.grid.len()];
 
         // Customize egui here with cc.egui_ctx.set_fonts and cc.egui_ctx.set_visuals.
@@ -151,13 +152,13 @@ impl NonogramGui {
                     );
                 }
                 if *color != BACKGROUND {
-                    if ui.button("⊗").clicked() {
+                    if ui.button(icons::ICON_DELETE).clicked() {
                         removed_color = Some(*color);
                     }
                 }
             });
         }
-        if ui.button("new color").clicked() {
+        if ui.button("New color").clicked() {
             add_color = true;
         }
         self.current_color = picked_color;
@@ -223,6 +224,7 @@ impl NonogramGui {
                             y,
                             old_color: self.picture.grid[x][y],
                         });
+                        self.redo_stack.clear(); // TODO: manage the two stacks together!
 
                         if self.picture.grid[x][y] != self.current_color {
                             self.picture.grid[x][y] = self.current_color;
@@ -319,13 +321,17 @@ impl eframe::App for NonogramGui {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.label("Puzzle Editor");
-                if ui.button("+").clicked() || ui.input(|i| i.key_pressed(egui::Key::Equals)) {
+                if ui.button(icons::ICON_ZOOM_IN).clicked()
+                    || ui.input(|i| i.key_pressed(egui::Key::Equals))
+                {
                     self.scale = (self.scale + 2.0).min(50.0);
                 }
-                if ui.button("-").clicked() || ui.input(|i| i.key_pressed(egui::Key::Minus)) {
+                if ui.button(icons::ICON_ZOOM_OUT).clicked()
+                    || ui.input(|i| i.key_pressed(egui::Key::Minus))
+                {
                     self.scale = (self.scale - 2.0).max(1.0);
                 }
-                if ui.button("load").clicked() {
+                if ui.button(icons::ICON_FILE_OPEN).clicked() {
                     if let Some(path) = rfd::FileDialog::new()
                         .add_filter("image", &["png", "gif", "bmp"])
                         .add_filter("PBN", &["xml", "pbn"])
@@ -356,12 +362,18 @@ impl eframe::App for NonogramGui {
                 ui.vertical(|ui| {
                     ui.set_width(100.0);
                     ui.horizontal(|ui| {
-                        if ui.button("⟲").clicked() || ui.input(|i| i.key_pressed(egui::Key::Z)) {
+                        ui.label(format!("({})", self.undo_stack.len()));
+                        if ui.button(icons::ICON_UNDO).clicked()
+                            || ui.input(|i| i.key_pressed(egui::Key::Z))
+                        {
                             self.un_or_re_do(true);
                         }
-                        if ui.button("⟳").clicked() || ui.input(|i| i.key_pressed(egui::Key::Y)) {
+                        if ui.button(icons::ICON_REDO).clicked()
+                            || ui.input(|i| i.key_pressed(egui::Key::Y))
+                        {
                             self.un_or_re_do(false);
                         }
+                        ui.label(format!("({})", self.redo_stack.len()));
                     });
 
                     ui.separator();
