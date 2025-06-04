@@ -22,13 +22,9 @@ struct NonogramGui {
     solved_mask: Vec<Vec<bool>>,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 enum UndoAction {
-    ChangeColor {
-        x: usize,
-        y: usize,
-        old_color: Color,
-    },
+    ChangeColor { changes: Vec<(usize, usize, Color)> },
 }
 
 impl NonogramGui {
@@ -214,16 +210,14 @@ impl NonogramGui {
             let from_screen = to_screen.inverse();
 
             if let Some(pointer_pos) = response.interact_pointer_pos() {
-                if response.clicked() {
+                if response.clicked() || response.dragged() {
                     let canvas_pos = from_screen * pointer_pos;
                     let x = canvas_pos.x as usize;
                     let y = canvas_pos.y as usize;
 
                     if (0..x_size).contains(&x) && (0..y_size).contains(&y) {
                         self.undo_stack.push(UndoAction::ChangeColor {
-                            x,
-                            y,
-                            old_color: self.picture.grid[x][y],
+                            changes: vec![(x, y, self.picture.grid[x][y])],
                         });
                         self.redo_stack.clear(); // TODO: manage the two stacks together!
 
@@ -334,19 +328,22 @@ impl NonogramGui {
 
         if let Some(action) = action {
             match action {
-                UndoAction::ChangeColor { x, y, old_color } => {
-                    let reversed_action = UndoAction::ChangeColor {
-                        x,
-                        y,
-                        old_color: self.picture.grid[x][y],
+                UndoAction::ChangeColor { changes } => {
+                    let reversed = UndoAction::ChangeColor {
+                        changes: changes
+                            .iter()
+                            .map(|(x, y, _)| (*x, *y, self.picture.grid[*x][*y]))
+                            .collect::<Vec<_>>(),
                     };
 
-                    self.picture.grid[x][y] = old_color;
+                    for (x, y, old_color) in changes {
+                        self.picture.grid[x][y] = old_color;
+                    }
 
                     if un {
-                        self.redo_stack.push(reversed_action);
+                        self.redo_stack.push(reversed);
                     } else {
-                        self.undo_stack.push(reversed_action);
+                        self.undo_stack.push(reversed);
                     }
                     self.report_stale = true;
                 }
