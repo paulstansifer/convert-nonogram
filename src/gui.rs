@@ -25,6 +25,7 @@ struct NonogramGui {
 #[derive(Clone, Debug)]
 enum Action {
     ChangeColor { changes: Vec<(usize, usize, Color)> },
+    ReplacePicture { picture: Solution },
 }
 
 enum ActionMood {
@@ -66,17 +67,27 @@ impl NonogramGui {
                     .map(|(x, y, _)| (*x, *y, self.picture.grid[*x][*y]))
                     .collect::<Vec<_>>(),
             },
+            Action::ReplacePicture { picture: _ } => Action::ReplacePicture {
+                picture: self.picture.clone(),
+            },
         }
     }
 
-    fn perform(&mut self, action: &Action, mood: ActionMood) {
+    fn perform(&mut self, action: Action, mood: ActionMood) {
         let reversed_action = self.reversed(&action);
 
         match action {
             Action::ChangeColor { changes } => {
                 for (x, y, old_color) in changes {
-                    self.picture.grid[*x][*y] = *old_color;
+                    self.picture.grid[x][y] = old_color;
                 }
+                self.report_stale = true;
+            }
+            Action::ReplacePicture { picture } => {
+                let solved_mask = vec![vec![false; picture.grid[0].len()]; picture.grid.len()];
+                self.picture = picture;
+                self.solved_mask = solved_mask;
+
                 self.report_stale = true;
             }
         }
@@ -108,7 +119,7 @@ impl NonogramGui {
         };
 
         self.perform(
-            &action,
+            action,
             if un {
                 ActionMood::Undo
             } else {
@@ -171,6 +182,8 @@ fn cell_shape(
 }
 
 impl NonogramGui {
+    fn resizer(&mut self, ui: &mut egui::Ui) {}
+
     fn palette_editor(&mut self, ui: &mut egui::Ui) {
         let mut picked_color = self.current_color;
         let mut removed_color = None;
@@ -287,7 +300,7 @@ impl NonogramGui {
                             self.current_color
                         };
                         self.perform(
-                            &Action::ChangeColor {
+                            Action::ChangeColor {
                                 changes: vec![(x, y, new_color)],
                             },
                             ActionMood::Creative,
@@ -359,11 +372,13 @@ impl NonogramGui {
                     }
                     Err(_) => panic!("Impossible puzzle!"),
                 });
-                self.solved_mask = vec![vec![false; solution.grid[0].len()]; solution.grid.len()];
 
-                self.picture = solution;
-                self.filename = path;
-                self.report_stale = true;
+                self.perform(
+                    Action::ReplacePicture { picture: solution },
+                    ActionMood::Creative,
+                );
+
+                self.filename = path; // Should probably roll this into the action somehow too.
             }
         }
     }

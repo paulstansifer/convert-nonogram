@@ -188,7 +188,7 @@ pub struct ColorInfo {
     pub corner: Option<Corner>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Solution {
     pub clue_style: ClueStyle,
     pub palette: HashMap<Color, ColorInfo>, // should include the background!
