@@ -13,8 +13,8 @@ struct NonogramGui {
     scale: f32,
     filename: PathBuf,
 
-    undo_stack: Vec<UndoAction>,
-    redo_stack: Vec<UndoAction>,
+    undo_stack: Vec<Action>,
+    redo_stack: Vec<Action>,
 
     auto_solve: bool,
     solve_report: String,
@@ -23,8 +23,14 @@ struct NonogramGui {
 }
 
 #[derive(Clone, Debug)]
-enum UndoAction {
+enum Action {
     ChangeColor { changes: Vec<(usize, usize, Color)> },
+}
+
+enum ActionMood {
+    Creative,
+    Undo,
+    Redo,
 }
 
 impl NonogramGui {
@@ -50,6 +56,65 @@ impl NonogramGui {
             report_stale: true,
             solved_mask,
         }
+    }
+
+    fn reversed(&self, action: &Action) -> Action {
+        match action {
+            Action::ChangeColor { changes } => Action::ChangeColor {
+                changes: changes
+                    .iter()
+                    .map(|(x, y, _)| (*x, *y, self.picture.grid[*x][*y]))
+                    .collect::<Vec<_>>(),
+            },
+        }
+    }
+
+    fn perform(&mut self, action: &Action, mood: ActionMood) {
+        let reversed_action = self.reversed(&action);
+
+        match action {
+            Action::ChangeColor { changes } => {
+                for (x, y, old_color) in changes {
+                    self.picture.grid[*x][*y] = *old_color;
+                }
+                self.report_stale = true;
+            }
+        }
+
+        match mood {
+            ActionMood::Creative => {
+                self.undo_stack.push(reversed_action);
+                self.redo_stack.clear();
+            }
+            ActionMood::Undo => {
+                self.redo_stack.push(reversed_action);
+            }
+            ActionMood::Redo => {
+                self.undo_stack.push(reversed_action);
+            }
+        }
+    }
+
+    fn un_or_re_do(&mut self, un: bool) {
+        let action = if un {
+            self.undo_stack.pop()
+        } else {
+            self.redo_stack.pop()
+        };
+
+        let action = match action {
+            Some(action) => action,
+            None => return,
+        };
+
+        self.perform(
+            &action,
+            if un {
+                ActionMood::Undo
+            } else {
+                ActionMood::Redo
+            },
+        );
     }
 }
 
@@ -216,18 +281,18 @@ impl NonogramGui {
                     let y = canvas_pos.y as usize;
 
                     if (0..x_size).contains(&x) && (0..y_size).contains(&y) {
-                        self.undo_stack.push(UndoAction::ChangeColor {
-                            changes: vec![(x, y, self.picture.grid[x][y])],
-                        });
-                        self.redo_stack.clear(); // TODO: manage the two stacks together!
-
-                        if self.picture.grid[x][y] != self.current_color {
-                            self.picture.grid[x][y] = self.current_color;
+                        let new_color = if self.picture.grid[x][y] == self.current_color {
+                            BACKGROUND
                         } else {
-                            self.picture.grid[x][y] = BACKGROUND;
-                        }
+                            self.current_color
+                        };
+                        self.perform(
+                            &Action::ChangeColor {
+                                changes: vec![(x, y, new_color)],
+                            },
+                            ActionMood::Creative,
+                        );
                     }
-                    self.report_stale = true;
                 }
             }
 
@@ -315,38 +380,6 @@ impl NonogramGui {
             {
                 crate::export::save(None, Some(&self.picture), &path, None).unwrap();
                 self.filename = path;
-            }
-        }
-    }
-
-    fn un_or_re_do(&mut self, un: bool) {
-        let action = if un {
-            self.undo_stack.pop()
-        } else {
-            self.redo_stack.pop()
-        };
-
-        if let Some(action) = action {
-            match action {
-                UndoAction::ChangeColor { changes } => {
-                    let reversed = UndoAction::ChangeColor {
-                        changes: changes
-                            .iter()
-                            .map(|(x, y, _)| (*x, *y, self.picture.grid[*x][*y]))
-                            .collect::<Vec<_>>(),
-                    };
-
-                    for (x, y, old_color) in changes {
-                        self.picture.grid[x][y] = old_color;
-                    }
-
-                    if un {
-                        self.redo_stack.push(reversed);
-                    } else {
-                        self.undo_stack.push(reversed);
-                    }
-                    self.report_stale = true;
-                }
             }
         }
     }
