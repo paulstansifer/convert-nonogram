@@ -195,14 +195,14 @@ pub struct Solution {
     pub grid: Vec<Vec<Color>>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Puzzle<C: Clue> {
     pub palette: HashMap<Color, ColorInfo>, // should include the background!
     pub rows: Vec<Vec<C>>,
     pub cols: Vec<Vec<C>>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum DynPuzzle {
     Nono(Puzzle<Nono>),
     Triano(Puzzle<Triano>),

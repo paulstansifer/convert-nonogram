@@ -49,7 +49,12 @@ fn main() -> std::io::Result<()> {
     }
 
     if args.gui {
-        gui::edit_image(solution.unwrap());
+        // TODO: this sorta duplicates some code in gui
+        let solution = solution.unwrap_or_else(|| match puzzle.solve(false) {
+            Ok(report) => report.solution,
+            Err(_) => panic!("Impossible puzzle!"),
+        });
+        gui::edit_image(solution);
         return Ok(());
     }
 

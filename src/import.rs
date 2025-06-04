@@ -50,7 +50,12 @@ pub fn load(path: &PathBuf, format: Option<NonogramFormat>) -> (DynPuzzle, Optio
 
             (solution.to_puzzle(), Some(solution))
         }
-        _ => todo!(),
+        NonogramFormat::Olsak => {
+            let olsak_string = read_path(&path);
+            let puzzle = olsak_to_puzzle(&olsak_string).unwrap();
+
+            (puzzle, None)
+        }
     }
 }
 
@@ -430,6 +435,273 @@ pub fn webpbn_to_puzzle(webpbn: &str) -> Puzzle<Nono> {
     }
 
     res
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum OlsakStanza {
+    Preamble,
+    Palette,
+    Dimension(usize),
+}
+
+#[derive(Debug, PartialEq, Eq, Hash)]
+enum Glue {
+    NoGlue,
+    Left,
+    Right,
+}
+
+pub fn olsak_to_puzzle(olsak: &str) -> anyhow::Result<DynPuzzle> {
+    use Glue::*;
+    use OlsakStanza::*;
+    let mut cur_stanza = Preamble;
+
+    let mut next_color: u8 = 1;
+
+    let named_colors = BTreeMap::<&str, (u8, u8, u8)>::from([
+        ("white", (255, 255, 255)),
+        ("black", (0, 0, 0)),
+        ("red", (255, 0, 0)),
+        ("green", (0, 255, 0)),
+        ("blue", (0, 0, 255)),
+        ("pink", (255, 128, 128)),
+        ("yellow", (255, 255, 0)),
+        ("r", (255, 0, 0)),
+        ("g", (0, 255, 0)),
+        ("b", (0, 0, 255)),
+    ]);
+
+    let mut olsak_palette = HashMap::<char, ColorInfo>::new();
+    // For each dimension, store the "glued" colors (the caps):
+    let mut olsak_glued_palettes = vec![
+        HashMap::<(char, Glue), ColorInfo>::new(),
+        HashMap::<(char, Glue), ColorInfo>::new(),
+    ];
+    let mut clue_style = ClueStyle::Nono;
+
+    // Dimension > Position > Clue index
+    let mut nono_clues: Vec<Vec<Vec<Nono>>> = vec![vec![], vec![]];
+    let mut triano_clues: Vec<Vec<Vec<Triano>>> = vec![vec![], vec![]];
+
+    for line in olsak.lines() {
+        if let Some(palette_ch) = line.strip_prefix("#") {
+            if cur_stanza != Preamble {
+                bail!("Palette initiator (line beginning with '#') must be the first content");
+            }
+
+            let palette_ch = palette_ch.to_lowercase();
+
+            if palette_ch.starts_with("t") {
+                bail!("Triddlers not yet supported!");
+            }
+
+            assert!(palette_ch.starts_with("d"));
+            cur_stanza = Palette;
+        } else if line.starts_with(":") {
+            cur_stanza = Dimension(if let Dimension(n) = cur_stanza {
+                n + 1
+            } else {
+                0
+            });
+        } else if cur_stanza == Preamble {
+            /* Just comments */
+        } else if cur_stanza == Palette {
+            let captures = regex::Regex::new(r"\s*(\S):(.)\s+(\S+)\s*(.*)")
+                .unwrap()
+                .captures(line)
+                .ok_or(anyhow::anyhow!("Malformed palette line {line}"))?;
+
+            let (_, [input_ch, unique_ch, color_name, comment]) = captures.extract();
+
+            let parse_glue = |c| match c {
+                '>' => Right,
+                '<' => Left,
+                _ => NoGlue,
+            };
+
+            let rising = color_name.contains('/');
+
+            let corner = match (color_name.split_once(&['/', '\\']), rising) {
+                (None, _) => None,
+                (Some(("white", "black")), true) => Some(Corner {
+                    upper: false,
+                    left: false,
+                }),
+                (Some(("white", "black")), false) => Some(Corner {
+                    upper: true,
+                    left: false,
+                }),
+                (Some(("black", "white")), true) => Some(Corner {
+                    upper: true,
+                    left: true,
+                }),
+                (Some(("black", "white")), false) => Some(Corner {
+                    upper: false,
+                    left: true,
+                }),
+                (Some((_, _)), _) => {
+                    println!("Unsupported triangle color combination: {color_name}");
+                    None
+                }
+            };
+
+            let rgb = if let Some((_, [rs, gs, bs])) = regex::Regex::new(r"#(..)(..)(..)")
+                .unwrap()
+                .captures(color_name)
+                .map(|c| c.extract())
+            {
+                (
+                    u8::from_str_radix(rs, 16).unwrap(),
+                    u8::from_str_radix(gs, 16).unwrap(),
+                    u8::from_str_radix(bs, 16).unwrap(),
+                )
+            } else if let Some((r, g, b)) = named_colors.get(color_name) {
+                (*r, *g, *b)
+            } else if let Some((r, g, b)) = named_colors.get(input_ch) {
+                (*r, *g, *b)
+            } else {
+                // TODO: generate nice colors, like for chargrid (probably less critical here)
+                (128, 128, 128)
+            };
+
+            let dim_0_glue = comment.chars().nth(0).map(parse_glue).unwrap_or(NoGlue);
+            let dim_1_glue = comment.chars().nth(1).map(parse_glue).unwrap_or(NoGlue);
+
+            if dim_0_glue != NoGlue || dim_1_glue != NoGlue {
+                clue_style = ClueStyle::Triano;
+            }
+
+            let color = if input_ch == "0" {
+                BACKGROUND
+            } else {
+                Color(next_color)
+            };
+
+            let color_info = ColorInfo {
+                ch: unique_ch.chars().next().unwrap(),
+                name: color_name.to_string(),
+                rgb,
+                color,
+                corner,
+            };
+            let input_ch = input_ch.chars().next().unwrap();
+
+            if dim_0_glue == NoGlue && dim_1_glue == NoGlue {
+                olsak_palette.insert(input_ch, color_info);
+            } else {
+                assert!(dim_0_glue != NoGlue && dim_1_glue != NoGlue);
+                olsak_glued_palettes[0].insert((input_ch, dim_0_glue), color_info.clone());
+                olsak_glued_palettes[1].insert((input_ch, dim_1_glue), color_info);
+            }
+
+            next_color += 1;
+        } else if let Dimension(d) = cur_stanza {
+            if !olsak_palette.contains_key(&'1') {
+                olsak_palette.insert(
+                    '1',
+                    ColorInfo {
+                        ch: '#',
+                        name: "black".to_string(),
+                        rgb: (0, 0, 0),
+                        color: Color(next_color),
+                        corner: None,
+                    },
+                );
+            }
+
+            if d >= 2 {
+                // There can be comments after the end!
+                continue;
+            }
+            let clue_strs = line.split_whitespace();
+            match clue_style {
+                ClueStyle::Nono => {
+                    let mut clues = vec![];
+                    for clue_str in clue_strs {
+                        if let Ok(count) = clue_str.parse::<u16>() {
+                            clues.push(Nono {
+                                color: olsak_palette[&'1'].color,
+                                count,
+                            })
+                        } else {
+                            let count: u8 = clue_str
+                                .trim_end_matches(|c: char| !c.is_numeric())
+                                .parse()?;
+                            let input_ch = clue_str.chars().last().unwrap();
+                            clues.push(Nono {
+                                color: olsak_palette[&input_ch].color,
+                                count: count as u16,
+                            })
+                        }
+                    }
+                    nono_clues[d].push(clues);
+                }
+                ClueStyle::Triano => {
+                    let mut clues = vec![];
+
+                    for clue_str in clue_strs {
+                        let chars: Vec<char> = clue_str.chars().collect();
+                        let front_cap = if !chars.first().unwrap().is_numeric() {
+                            Some(olsak_glued_palettes[d][&(*chars.first().unwrap(), Left)].color)
+                        } else {
+                            None
+                        };
+                        let back_cap = if !chars.last().unwrap().is_numeric() {
+                            Some(olsak_glued_palettes[d][&(*chars.last().unwrap(), Right)].color)
+                        } else {
+                            None
+                        };
+                        let count = clue_str
+                            .trim_matches(|c: char| !c.is_numeric())
+                            .parse::<u16>()?;
+
+                        clues.push(Triano {
+                            front_cap,
+                            body_len: count,
+                            body_color: olsak_palette[&'1'].color,
+                            back_cap,
+                        });
+                    }
+                    triano_clues[d].push(clues);
+                }
+            }
+        }
+    }
+    if !olsak_palette.contains_key(&'0') {
+        olsak_palette.insert(
+            '0',
+            ColorInfo {
+                ch: ' ',
+                name: "white".to_string(),
+                rgb: (255, 255, 255),
+                color: BACKGROUND,
+                corner: None,
+            },
+        );
+    }
+
+    let mut palette: HashMap<Color, ColorInfo> = olsak_palette
+        .into_values()
+        .map(|ci| (ci.color, ci))
+        .collect();
+    for d in 0..2 {
+        for (_, ci) in olsak_glued_palettes[d].iter() {
+            palette.insert(ci.color, ci.clone());
+        }
+    }
+
+    Ok(match clue_style {
+        ClueStyle::Nono => DynPuzzle::Nono(Puzzle::<Nono> {
+            palette,
+            rows: nono_clues[0].clone(),
+            cols: nono_clues[1].clone(),
+        }),
+        ClueStyle::Triano => DynPuzzle::Triano(Puzzle::<Triano> {
+            palette,
+            rows: triano_clues[0].clone(),
+            cols: triano_clues[1].clone(),
+        }),
+    })
 }
 
 pub fn quality_check(solution: &Solution) {
