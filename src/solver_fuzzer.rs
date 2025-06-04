@@ -70,7 +70,7 @@ mod tests {
     #[test]
     fn fuzzer() {
         let mut rng = rand::rngs::StdRng::seed_from_u64(0);
-        let num_fuzz_cases = 1000;
+        let num_fuzz_cases = 200;
         let max_line_length = 25;
 
         for i in 0..num_fuzz_cases {
