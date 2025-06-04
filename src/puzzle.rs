@@ -1,7 +1,11 @@
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::path::PathBuf;
+
+use crate::import::{solution_to_puzzle, solution_to_triano_puzzle};
 pub trait Clue: Clone + Copy + Debug {
+    fn style() -> ClueStyle;
+
     fn new_solid(color: Color, count: u16) -> Self;
 
     fn must_be_separated_from(&self, next: &Self) -> bool;
@@ -34,6 +38,10 @@ pub struct Nono {
 }
 
 impl Clue for Nono {
+    fn style() -> ClueStyle {
+        ClueStyle::Nono
+    }
+
     fn new_solid(color: Color, count: u16) -> Self {
         Nono { color, count }
     }
@@ -76,6 +84,10 @@ pub struct Triano {
 }
 
 impl Clue for Triano {
+    fn style() -> ClueStyle {
+        ClueStyle::Triano
+    }
+
     fn new_solid(color: Color, count: u16) -> Self {
         Triano {
             front_cap: None,
@@ -178,6 +190,7 @@ pub struct ColorInfo {
 
 #[derive(Clone)]
 pub struct Solution {
+    pub clue_style: ClueStyle,
     pub palette: HashMap<Color, ColorInfo>, // should include the background!
     pub grid: Vec<Vec<Color>>,
 }
@@ -207,6 +220,15 @@ impl DynPuzzle {
         match self {
             DynPuzzle::Nono(puzzle) => puzzle,
             DynPuzzle::Triano(_) => panic!("must be a true nonogram!"),
+        }
+    }
+}
+
+impl Solution {
+    pub fn to_puzzle(&self) -> DynPuzzle {
+        match self.clue_style {
+            ClueStyle::Nono => DynPuzzle::Nono(solution_to_puzzle(self)),
+            ClueStyle::Triano => DynPuzzle::Triano(solution_to_triano_puzzle(self)),
         }
     }
 }

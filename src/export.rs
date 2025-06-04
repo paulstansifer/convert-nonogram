@@ -1,9 +1,42 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use axohtml::{html, text};
 use image::{Rgb, RgbImage};
 
-use crate::puzzle::{Clue, Nono, Puzzle, Solution};
+use crate::puzzle::{self, Clue, DynPuzzle, Nono, NonogramFormat, Puzzle, Solution};
+
+pub fn save(
+    puzzle: Option<DynPuzzle>,
+    solution: Option<&Solution>,
+    path: &PathBuf,
+    format: Option<NonogramFormat>,
+) -> anyhow::Result<()> {
+    let output_format = puzzle::infer_format(&path, format);
+
+    let puzzle = puzzle.unwrap_or_else(|| solution.expect("gotta have SOMETHING").to_puzzle());
+
+    if output_format == NonogramFormat::Image {
+        emit_image(solution.as_ref().unwrap(), path)
+    } else {
+        let output_data = match output_format {
+            NonogramFormat::Olsak => as_olsak(&puzzle.assume_nono()),
+            NonogramFormat::Webpbn => as_webpbn(&puzzle.assume_nono()),
+            NonogramFormat::Html => match puzzle {
+                puzzle::DynPuzzle::Nono(p) => as_html(&p),
+                puzzle::DynPuzzle::Triano(p) => as_html(&p),
+            },
+            NonogramFormat::Image => panic!(),
+            NonogramFormat::CharGrid => as_char_grid(solution.as_ref().unwrap()),
+        };
+        if path == &PathBuf::from("-") {
+            print!("{}", output_data);
+            Ok(())
+        } else {
+            std::fs::write(path, output_data)?;
+            Ok(())
+        }
+    }
+}
 
 pub fn as_html<C: Clue>(puzzle: &Puzzle<C>) -> String {
     let html: axohtml::dom::DOMTree<String> = html!(

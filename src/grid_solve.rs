@@ -156,6 +156,7 @@ fn grid_to_solution<C: Clue>(grid: &Grid, puzzle: &Puzzle<C>) -> Solution {
         })
         .collect();
     Solution {
+        clue_style: C::style(),
         grid,
         palette: puzzle.palette.clone(),
     }

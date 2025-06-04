@@ -25,11 +25,7 @@ fn read_path(path: &PathBuf) -> String {
     res
 }
 
-pub fn load(
-    path: &PathBuf,
-    format: Option<NonogramFormat>,
-    clue_style: ClueStyle,
-) -> (DynPuzzle, Option<Solution>) {
+pub fn load(path: &PathBuf, format: Option<NonogramFormat>) -> (DynPuzzle, Option<Solution>) {
     let input_format = puzzle::infer_format(&path, format);
 
     match input_format {
@@ -38,35 +34,21 @@ pub fn load(
         }
         NonogramFormat::Image => {
             let img = image::open(path).unwrap();
-
             let solution = image_to_solution(&img);
 
-            (Nono::to_dyn(solution_to_puzzle(&solution)), Some(solution))
+            (solution.to_puzzle(), Some(solution))
         }
         NonogramFormat::Webpbn => {
             let webpbn_string = read_path(&path);
-
             let puzzle: puzzle::Puzzle<puzzle::Nono> = webpbn_to_puzzle(&webpbn_string);
 
             (Nono::to_dyn(puzzle), None)
         }
         NonogramFormat::CharGrid => {
             let grid_string = read_path(&path);
+            let solution = char_grid_to_solution(&grid_string);
 
-            let mut solution = char_grid_to_solution(&grid_string);
-
-            let puzzle = match clue_style {
-                ClueStyle::Nono => Nono::to_dyn(solution_to_puzzle(&solution)),
-                ClueStyle::Triano => {
-                    let puzzle = solution_to_triano_puzzle(&solution);
-
-                    // HACK: We adjusted the palette
-                    solution.palette = puzzle.palette.clone();
-                    Triano::to_dyn(puzzle)
-                }
-            };
-
-            (puzzle, Some(solution))
+            (solution.to_puzzle(), Some(solution))
         }
         _ => todo!(),
     }
@@ -130,6 +112,7 @@ pub fn image_to_solution(image: &DynamicImage) -> Solution {
     }
 
     Solution {
+        clue_style: ClueStyle::Nono, // Images can't have triangular pixels!
         palette: palette
             .into_values()
             .map(|color_info| (color_info.color, color_info))
@@ -286,7 +269,24 @@ pub fn char_grid_to_solution(char_grid: &str) -> Solution {
         }
     }
 
+    let has_triangles = palette.values().any(|ci| ci.corner.is_some());
+
+    let clue_style = if has_triangles {
+        // Let's assume triano clues are black-and-white; fix the palette!
+        for (_, color_info) in &mut palette {
+            if color_info.color == BACKGROUND {
+                continue;
+            }
+            color_info.rgb = (0, 0, 0);
+        }
+
+        ClueStyle::Triano
+    } else {
+        ClueStyle::Nono
+    };
+
     Solution {
+        clue_style,
         palette: palette
             .into_values()
             .map(|color_info| (color_info.color, color_info))
@@ -512,16 +512,6 @@ pub fn solution_to_triano_puzzle(solution: &Solution) -> Puzzle<Triano> {
         back_cap: None,
     };
 
-    let mut palette = solution.palette.clone();
-
-    // Let's assume triano clues are black-and-white
-    for (color, color_info) in &mut palette {
-        if color == &BACKGROUND {
-            continue;
-        }
-        color_info.rgb = (0, 0, 0);
-    }
-
     // Generate row clues
     for y in 0..height {
         let mut clues = Vec::<Triano>::new();
@@ -529,7 +519,7 @@ pub fn solution_to_triano_puzzle(solution: &Solution) -> Puzzle<Triano> {
 
         for x in 0..width {
             let color = solution.grid[x][y];
-            let color_info = &palette[&color];
+            let color_info = &solution.palette[&color];
 
             // For example `!left` means ◢ or ◥:
             if color_info.corner.is_some_and(|c| !c.left) {
@@ -575,7 +565,7 @@ pub fn solution_to_triano_puzzle(solution: &Solution) -> Puzzle<Triano> {
 
         for y in 0..height {
             let color = solution.grid[x][y];
-            let color_info = &palette[&color];
+            let color_info = &solution.palette[&color];
 
             if color_info.corner.is_some_and(|c| !c.upper) {
                 // Only a blank clue can accept a front cap:
@@ -614,7 +604,7 @@ pub fn solution_to_triano_puzzle(solution: &Solution) -> Puzzle<Triano> {
     }
 
     Puzzle {
-        palette,
+        palette: solution.palette.clone(),
         rows,
         cols,
     }

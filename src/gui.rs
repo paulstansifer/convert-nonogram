@@ -1,7 +1,8 @@
+use std::path::PathBuf;
+
 use crate::{
     grid_solve,
-    import::{solution_to_puzzle, solution_to_triano_puzzle},
-    puzzle::{Clue, ClueStyle, Color, ColorInfo, Corner, Nono, Solution, Triano, BACKGROUND},
+    puzzle::{Color, ColorInfo, Corner, Solution, BACKGROUND},
 };
 use egui::{Color32, Frame, Pos2, Rect, RichText, Shape, Style, Vec2, Visuals};
 use egui_material_icons::icons;
@@ -10,7 +11,7 @@ struct NonogramGui {
     picture: Solution,
     current_color: Color,
     scale: f32,
-    clue_style: ClueStyle,
+    filename: PathBuf,
 
     undo_stack: Vec<UndoAction>,
     redo_stack: Vec<UndoAction>,
@@ -31,7 +32,7 @@ enum UndoAction {
 }
 
 impl NonogramGui {
-    fn new(cc: &eframe::CreationContext<'_>, picture: Solution, clue_style: ClueStyle) -> Self {
+    fn new(cc: &eframe::CreationContext<'_>, picture: Solution) -> Self {
         egui_material_icons::initialize(&cc.egui_ctx);
         let solved_mask = vec![vec![false; picture.grid[0].len()]; picture.grid.len()];
 
@@ -43,7 +44,7 @@ impl NonogramGui {
             picture,
             current_color: BACKGROUND,
             scale: 10.0,
-            clue_style,
+            filename: PathBuf::new(), // TODO: integrate with everything else better!
 
             undo_stack: vec![],
             redo_stack: vec![],
@@ -280,6 +281,50 @@ impl NonogramGui {
         });
     }
 
+    fn loader(&mut self, ui: &mut egui::Ui) {
+        if ui.button(icons::ICON_FILE_OPEN).clicked() {
+            if let Some(path) = rfd::FileDialog::new()
+                .add_filter("image", &["png", "gif", "bmp"])
+                .add_filter("PBN", &["xml", "pbn"])
+                .add_filter("chargrid", &["txt"])
+                .add_filter("Olsak", &["g"])
+                .set_directory(".")
+                .pick_file()
+            {
+                let (puzzle, solution) = crate::import::load(&path, None);
+
+                let solution = solution.unwrap_or_else(|| match puzzle.solve(false) {
+                    Ok(report) => {
+                        self.solved_mask = report.solved_mask;
+                        report.solution
+                    }
+                    Err(_) => panic!("Impossible puzzle!"),
+                });
+                self.solved_mask = vec![vec![false; solution.grid[0].len()]; solution.grid.len()];
+
+                self.picture = solution;
+                self.filename = path;
+                self.report_stale = true;
+            }
+        }
+    }
+
+    fn saver(&mut self, ui: &mut egui::Ui) {
+        if ui.button(icons::ICON_FILE_SAVE).clicked() {
+            if let Some(path) = rfd::FileDialog::new()
+                .add_filter("image", &["png", "gif", "bmp"])
+                .add_filter("PBN", &["xml", "pbn"])
+                .add_filter("chargrid", &["txt"])
+                .add_filter("Olsak", &["g"])
+                .set_directory(".")
+                .save_file()
+            {
+                crate::export::save(None, Some(&self.picture), &path, None).unwrap();
+                self.filename = path;
+            }
+        }
+    }
+
     fn un_or_re_do(&mut self, un: bool) {
         let action = if un {
             self.undo_stack.pop()
@@ -331,31 +376,8 @@ impl eframe::App for NonogramGui {
                 {
                     self.scale = (self.scale - 2.0).max(1.0);
                 }
-                if ui.button(icons::ICON_FILE_OPEN).clicked() {
-                    if let Some(path) = rfd::FileDialog::new()
-                        .add_filter("image", &["png", "gif", "bmp"])
-                        .add_filter("PBN", &["xml", "pbn"])
-                        .add_filter("chargrid", &["txt"])
-                        .add_filter("Olsak", &["g"])
-                        .set_directory(".")
-                        .pick_file()
-                    {
-                        let (puzzle, solution) = crate::import::load(&path, None, ClueStyle::Nono);
-
-                        let solution = solution.unwrap_or_else(|| match puzzle.solve(false) {
-                            Ok(report) => {
-                                self.solved_mask = report.solved_mask;
-                                report.solution
-                            }
-                            Err(_) => panic!("Impossible puzzle!"),
-                        });
-                        self.solved_mask =
-                            vec![vec![false; solution.grid[0].len()]; solution.grid.len()];
-
-                        self.picture = solution;
-                        self.report_stale = true;
-                    }
-                }
+                self.loader(ui);
+                self.saver(ui);
             });
 
             ui.horizontal(|ui| {
@@ -383,11 +405,7 @@ impl eframe::App for NonogramGui {
                     ui.separator();
                     ui.checkbox(&mut self.auto_solve, "auto-solve");
                     if ui.button("Solve").clicked() || (self.auto_solve && self.report_stale) {
-                        let puzzle = if self.clue_style == ClueStyle::Triano {
-                            Triano::to_dyn(solution_to_triano_puzzle(&self.picture))
-                        } else {
-                            Nono::to_dyn(solution_to_puzzle(&self.picture))
-                        };
+                        let puzzle = self.picture.to_puzzle();
 
                         match puzzle.solve(false) {
                             Ok(grid_solve::Report {
@@ -421,7 +439,7 @@ impl eframe::App for NonogramGui {
     }
 }
 
-pub fn edit_image(puzzle: &mut Solution, clue_style: ClueStyle) {
+pub fn edit_image(solution: Solution) {
     let native_options = eframe::NativeOptions::default();
     eframe::run_native(
         "Puzzle Editor",
@@ -438,7 +456,7 @@ pub fn edit_image(puzzle: &mut Solution, clue_style: ClueStyle) {
                 ..Style::default()
             };
             cc.egui_ctx.set_style(style);
-            Ok(Box::new(NonogramGui::new(cc, puzzle.clone(), clue_style)))
+            Ok(Box::new(NonogramGui::new(cc, solution)))
         }),
     )
     .unwrap()

@@ -11,7 +11,7 @@ use std::path::PathBuf;
 
 use clap::Parser;
 use import::quality_check;
-use puzzle::{ClueStyle, NonogramFormat};
+use puzzle::NonogramFormat;
 
 #[derive(clap::Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -35,10 +35,6 @@ struct Args {
     #[arg(short, long, action = clap::ArgAction::SetTrue)]
     trace_solve: bool,
 
-    /// Clue style (currently only meaningful for CharGrid input)
-    #[arg(long, value_enum, default_value_t)]
-    clue_style: ClueStyle,
-
     /// Opens the GUI editor
     #[arg(long, default_value_t)]
     gui: bool,
@@ -47,39 +43,19 @@ struct Args {
 fn main() -> std::io::Result<()> {
     let args = Args::parse();
 
-    let (puzzle, solution) = import::load(&args.input_path, args.input_format, args.clue_style);
+    let (puzzle, solution) = import::load(&args.input_path, args.input_format);
     if let Some(ref solution) = solution {
         quality_check(solution);
     }
 
     if args.gui {
-        gui::edit_image(&mut solution.unwrap(), args.clue_style);
+        gui::edit_image(solution.unwrap());
         return Ok(());
     }
 
     match args.output_path {
         Some(path) => {
-            let output_format = puzzle::infer_format(&path, args.output_format);
-
-            if output_format == NonogramFormat::Image {
-                export::emit_image(&solution.unwrap(), path).unwrap();
-            } else {
-                let output_data = match output_format {
-                    NonogramFormat::Olsak => export::as_olsak(&puzzle.assume_nono()),
-                    NonogramFormat::Webpbn => export::as_webpbn(&puzzle.assume_nono()),
-                    NonogramFormat::Html => match puzzle {
-                        puzzle::DynPuzzle::Nono(p) => export::as_html(&p),
-                        puzzle::DynPuzzle::Triano(p) => export::as_html(&p),
-                    },
-                    NonogramFormat::Image => panic!(),
-                    NonogramFormat::CharGrid => export::as_char_grid(&solution.unwrap()),
-                };
-                if path == PathBuf::from("-") {
-                    print!("{}", output_data);
-                } else {
-                    std::fs::write(path, output_data)?;
-                }
-            }
+            export::save(Some(puzzle), solution.as_ref(), &path, args.output_format).unwrap();
         }
 
         None => match puzzle.solve(args.trace_solve) {
@@ -112,7 +88,7 @@ fn main() -> std::io::Result<()> {
 #[test]
 // This is a consistency test, used to notice when measured difficulties change.
 fn solve_examples() {
-    use crate::{grid_solve::Report, import, puzzle::ClueStyle};
+    use crate::{grid_solve::Report, import};
     use itertools::Itertools;
     use std::path::PathBuf;
 
@@ -126,7 +102,7 @@ fn solve_examples() {
         let entry = entry.unwrap();
         let path = entry.path();
         if path.is_file() {
-            let (puzzle, _solution) = import::load(&path, None, ClueStyle::Nono);
+            let (puzzle, _solution) = import::load(&path, None);
             match puzzle.solve(false) {
                 Ok(Report {
                     skims,

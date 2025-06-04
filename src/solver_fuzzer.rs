@@ -84,6 +84,7 @@ mod tests {
                     grid[j][0] = *color;
                 }
                 let dummy_solution = Solution {
+                    clue_style: crate::puzzle::ClueStyle::Nono,
                     palette: (0..=max_colors)
                         .map(|i| {
                             let color = Color(i);
