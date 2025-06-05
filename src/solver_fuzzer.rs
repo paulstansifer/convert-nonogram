@@ -157,8 +157,10 @@ mod tests {
         let max_line_length = 25;
 
         for i in 0..num_fuzz_cases {
+            // Look at fewer colors at first:
             for max_colors in 2..=5 {
-                let line_length = rng.gen_range(1..=max_line_length);
+                // Look at shorter lines at first:
+                let line_length = rng.gen_range(1..=max_line_length.min((i + 1) * 2));
                 let solution_line = generate_random_line(line_length, max_colors);
 
                 let original_partial_solution =
@@ -171,12 +173,12 @@ mod tests {
                     solution_to_puzzle,
                 );
 
-                // validate_solver(
-                //     i,
-                //     solution_line,
-                //     original_partial_solution,
-                //     solution_to_triano_puzzle,
-                // );
+                validate_solver(
+                    i,
+                    solution_line,
+                    original_partial_solution,
+                    solution_to_triano_puzzle,
+                );
             }
         }
     }

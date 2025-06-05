@@ -102,12 +102,10 @@ impl Clue for Triano {
             + self.back_cap.is_some() as usize
     }
     fn color_at(&self, idx: usize) -> Color {
-        if idx == 0 {
-            self.front_cap.unwrap_or(self.body_color)
-        } else if idx == self.len() - 1 {
-            self.back_cap.unwrap_or(self.body_color)
-        } else {
-            self.body_color
+        match (idx, self.front_cap, self.back_cap) {
+            (0, Some(c), _) => c,
+            (idx, _, Some(c)) if idx == self.len() - 1 => c,
+            _ => self.body_color,
         }
     }
     fn must_be_separated_from(&self, next: &Self) -> bool {
