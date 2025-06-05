@@ -9,9 +9,11 @@ mod puzzle;
 
 #[cfg(test)]
 mod tests {
-    use crate::import::solution_to_puzzle;
+    use std::collections::HashSet;
+
+    use crate::import::{solution_to_puzzle, solution_to_triano_puzzle};
     use crate::line_solve::{scrub_line, skim_line, Cell};
-    use crate::puzzle::{Color, Solution, BACKGROUND};
+    use crate::puzzle::{Clue, Color, ColorInfo, Puzzle, Solution, BACKGROUND};
     use ndarray::Array1;
     use rand::{Rng, SeedableRng};
 
@@ -67,6 +69,87 @@ mod tests {
         Array1::from(partial_solution)
     }
 
+    fn dummy_color(color: Color) -> (Color, ColorInfo) {
+        (
+            color,
+            crate::puzzle::ColorInfo {
+                ch: ' ',
+                name: String::new(),
+                rgb: (0, 0, 0),
+                color,
+                corner: if color.0 <= 1 {
+                    None
+                } else {
+                    Some(crate::puzzle::Corner {
+                        left: color.0 % 2 == 0,
+                        upper: true,
+                    })
+                },
+            },
+        )
+    }
+
+    fn validate_solver<C: Clue, F>(case: usize, line: Vec<Color>, partial: Array1<Cell>, f: F)
+    where
+        F: FnOnce(&Solution) -> Puzzle<C>,
+    {
+        let mut available_colors = HashSet::<Color>::new();
+        // Create a dummy Solution struct to use solution_to_puzzle
+        let mut grid = vec![vec![BACKGROUND]; line.len()];
+        for (j, color) in line.iter().enumerate() {
+            grid[j][0] = *color;
+            available_colors.insert(*color);
+        }
+
+        let dummy_solution = Solution {
+            clue_style: crate::puzzle::ClueStyle::Nono,
+            palette: available_colors.into_iter().map(dummy_color).collect(),
+            grid,
+        };
+
+        let puzzle = f(&dummy_solution);
+        let clues = &puzzle.rows[0]; // Get clues for the generated line
+
+        let mut sc_partial_solution = partial.clone();
+        let mut sk_partial_solution = partial.clone();
+
+        match skim_line(clues, sk_partial_solution.view_mut()) {
+            Ok(_) => {
+                for j in 0..line.len() {
+                    if !sk_partial_solution[j].can_be(line[j]) {
+                        panic!(
+                            "Fuzz case {case}: skim_line inconsistent at {j}.  Clues: {:?}. Orig: {line:?}, Partial: {partial:?}, Partial solution after skim: {:?}",
+                            clues, sk_partial_solution);
+                    }
+                }
+            }
+            Err(e) => {
+                panic!(
+                    "Fuzz case {case}: skim_line error: {}. Orig: {line:?}, Partial: {partial:?}",
+                    e
+                );
+            }
+        }
+
+        match scrub_line(clues, sc_partial_solution.view_mut()) {
+            Ok(_) => {
+                for j in 0..line.len() {
+                    if !sc_partial_solution[j].can_be(line[j]) {
+                        panic!(
+                            "Fuzz case {case}: scrub_line inconsistent at {j}.  Clues: {:?}. Orig: {line:?}, Partial: {partial:?}, Partial solution after skim: {:?}",
+                            clues, sc_partial_solution);
+                    }
+                }
+            }
+            Err(e) => {
+                panic!(
+                    "Fuzz case {case}: scrub_line error: {}. Orig: {line:?}, Partial: {partial:?}",
+                    e
+                );
+            }
+        }
+    }
+
     #[test]
     fn fuzzer() {
         let mut rng = rand::rngs::StdRng::seed_from_u64(0);
@@ -78,80 +161,22 @@ mod tests {
                 let line_length = rng.gen_range(1..=max_line_length);
                 let solution_line = generate_random_line(line_length, max_colors);
 
-                // Create a dummy Solution struct to use solution_to_puzzle
-                let mut grid = vec![vec![BACKGROUND]; line_length];
-                for (j, color) in solution_line.iter().enumerate() {
-                    grid[j][0] = *color;
-                }
-                let dummy_solution = Solution {
-                    clue_style: crate::puzzle::ClueStyle::Nono,
-                    palette: (0..=max_colors)
-                        .map(|i| {
-                            let color = Color(i);
-                            (
-                                color,
-                                crate::puzzle::ColorInfo {
-                                    ch: ' ', // Dummy char
-                                    name: format!("color_{}", i),
-                                    rgb: (0, 0, 0), // Dummy rgb
-                                    color,
-                                    corner: None,
-                                },
-                            )
-                        })
-                        .collect(),
-                    grid,
-                };
-
-                let puzzle = solution_to_puzzle(&dummy_solution);
-                let clues = &puzzle.rows[0]; // Get clues for the generated line
-
                 let original_partial_solution =
                     generate_consistent_partial_solution(&solution_line, max_colors);
-                let mut sc_partial_solution = original_partial_solution.clone();
-                let mut sk_partial_solution = original_partial_solution.clone();
 
-                match skim_line(clues, sk_partial_solution.view_mut()) {
-                    Ok(_) => {
-                        // Check for inconsistencies
-                        for j in 0..line_length {
-                            if !sk_partial_solution[j].can_be(solution_line[j]) {
-                                panic!(
-                                "Fuzz case {}: skim_line deduced inconsistency at index {}.  Clues: {:?}. Original line: {:?}, Partial solution before skim: {:?}, Partial solution after skim: {:?}",
-                                i, j, clues, solution_line, original_partial_solution, sk_partial_solution
-                            );
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        // Check for solver-identified inconsistencies.
-                        panic!(
-                        "Fuzz case {}: skim_line returned an error: {}. Original line: {:?}, Partial solution before skim: {:?}",
-                        i, e, solution_line, original_partial_solution
-                    );
-                    }
-                }
+                validate_solver(
+                    i,
+                    solution_line.clone(),
+                    original_partial_solution.clone(),
+                    solution_to_puzzle,
+                );
 
-                match scrub_line(clues, sc_partial_solution.view_mut()) {
-                    Ok(_) => {
-                        // Check for inconsistencies
-                        for j in 0..line_length {
-                            if !sc_partial_solution[j].can_be(solution_line[j]) {
-                                panic!(
-                                "Fuzz case {}: scrub_line deduced inconsistency at index {}.  Clues: {:?}. Original line: {:?}, Partial solution before skim: {:?}, Partial solution after skim: {:?}",
-                                i, j, clues, solution_line, original_partial_solution, sc_partial_solution
-                            );
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        // Check for solver-identified inconsistencies.
-                        panic!(
-                        "Fuzz case {}: scrub_line returned an error: {}. Original line: {:?}, Partial solution before skim: {:?}",
-                        i, e, solution_line, original_partial_solution
-                    );
-                    }
-                }
+                // validate_solver(
+                //     i,
+                //     solution_line,
+                //     original_partial_solution,
+                //     solution_to_triano_puzzle,
+                // );
             }
         }
     }
