@@ -17,6 +17,8 @@ struct NonogramGui {
     redo_stack: Vec<Action>,
 
     auto_solve: bool,
+    lines_to_affect_string: String,
+
     solve_report: String,
     report_stale: bool,
     solved_mask: Vec<Vec<bool>>,
@@ -53,6 +55,8 @@ impl NonogramGui {
             redo_stack: vec![],
 
             auto_solve: false,
+            lines_to_affect_string: "5".to_string(),
+
             solve_report: "".to_string(),
             report_stale: true,
             solved_mask,
@@ -182,7 +186,104 @@ fn cell_shape(
 }
 
 impl NonogramGui {
-    fn resizer(&mut self, ui: &mut egui::Ui) {}
+    fn resize(&mut self, top: Option<bool>, left: Option<bool>, add: bool) {
+        let mut g = self.picture.grid.clone();
+        let lines = match self.lines_to_affect_string.parse::<usize>() {
+            Ok(lines) => lines,
+            Err(_) => {
+                self.lines_to_affect_string += "??";
+                return;
+            }
+        };
+        if let Some(left) = left {
+            if add {
+                g.resize(g.len() + lines, vec![BACKGROUND; g.first().unwrap().len()]);
+                if left {
+                    g.rotate_right(lines);
+                }
+            } else {
+                if left {
+                    g.rotate_left(lines);
+                }
+                g.truncate(g.len() - lines);
+            }
+        } else if let Some(top) = top {
+            if add {
+                for row in g.iter_mut() {
+                    row.resize(row.len() + lines, BACKGROUND);
+                    if top {
+                        row.rotate_right(lines);
+                    }
+                }
+            } else {
+                for row in g.iter_mut() {
+                    if top {
+                        row.rotate_left(lines);
+                    }
+                    row.truncate(row.len() - lines);
+                }
+            }
+        }
+
+        self.perform(
+            Action::ReplacePicture {
+                picture: Solution {
+                    grid: g,
+                    ..self.picture.clone()
+                },
+            },
+            ActionMood::Creative,
+        );
+    }
+
+    fn resizer(&mut self, ui: &mut egui::Ui) {
+        ui.label("Resize grid:");
+
+        egui::Grid::new("resizer").show(ui, |ui| {
+            ui.label("");
+            ui.horizontal(|ui| {
+                if ui.button(icons::ICON_ADD).clicked() {
+                    self.resize(Some(true), None, true);
+                }
+                if ui.button(icons::ICON_REMOVE).clicked() {
+                    self.resize(Some(true), None, false);
+                }
+            });
+            ui.label("");
+            ui.end_row();
+
+            ui.vertical(|ui| {
+                if ui.button(icons::ICON_ADD).clicked() {
+                    self.resize(None, Some(true), true);
+                }
+                if ui.button(icons::ICON_REMOVE).clicked() {
+                    self.resize(None, Some(true), false);
+                }
+            });
+            ui.text_edit_singleline(&mut self.lines_to_affect_string);
+
+            ui.vertical(|ui| {
+                if ui.button(icons::ICON_ADD).clicked() {
+                    self.resize(None, Some(false), true);
+                }
+                if ui.button(icons::ICON_REMOVE).clicked() {
+                    self.resize(None, Some(false), false);
+                }
+            });
+            ui.end_row();
+
+            ui.label("");
+            ui.horizontal(|ui| {
+                if ui.button(icons::ICON_ADD).clicked() {
+                    self.resize(Some(false), None, true);
+                }
+                if ui.button(icons::ICON_REMOVE).clicked() {
+                    self.resize(Some(false), None, false);
+                }
+            });
+            ui.label("");
+        });
+    }
 
     fn palette_editor(&mut self, ui: &mut egui::Ui) {
         let mut picked_color = self.current_color;
@@ -442,6 +543,10 @@ impl eframe::App for NonogramGui {
                         }
                         ui.label(format!("({})", self.redo_stack.len()));
                     });
+
+                    ui.separator();
+
+                    self.resizer(ui);
 
                     ui.separator();
 
