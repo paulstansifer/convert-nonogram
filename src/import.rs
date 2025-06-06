@@ -497,27 +497,39 @@ pub fn olsak_to_puzzle(olsak: &str) -> anyhow::Result<DynPuzzle> {
 
             let rising = color_name.contains('/');
 
-            let corner = match (color_name.split_once(&['/', '\\']), rising) {
-                (None, _) => None,
-                (Some(("white", "black")), true) => Some(Corner {
-                    upper: false,
-                    left: false,
-                }),
-                (Some(("white", "black")), false) => Some(Corner {
-                    upper: true,
-                    left: false,
-                }),
-                (Some(("black", "white")), true) => Some(Corner {
-                    upper: true,
-                    left: true,
-                }),
-                (Some(("black", "white")), false) => Some(Corner {
-                    upper: false,
-                    left: true,
-                }),
+            let (corner, unique_ch) = match (color_name.split_once(&['/', '\\']), rising) {
+                (None, _) => (None, unique_ch.chars().next().unwrap()),
+                (Some(("white", "black")), true) => (
+                    Some(Corner {
+                        upper: false,
+                        left: false,
+                    }),
+                    '◢',
+                ),
+                (Some(("white", "black")), false) => (
+                    Some(Corner {
+                        upper: true,
+                        left: false,
+                    }),
+                    '◥',
+                ),
+                (Some(("black", "white")), true) => (
+                    Some(Corner {
+                        upper: true,
+                        left: true,
+                    }),
+                    '◤',
+                ),
+                (Some(("black", "white")), false) => (
+                    Some(Corner {
+                        upper: false,
+                        left: true,
+                    }),
+                    '◣',
+                ),
                 (Some((_, _)), _) => {
                     println!("Unsupported triangle color combination: {color_name}");
-                    None
+                    (None, unique_ch.chars().next().unwrap())
                 }
             };
 
@@ -535,6 +547,8 @@ pub fn olsak_to_puzzle(olsak: &str) -> anyhow::Result<DynPuzzle> {
                 (*r, *g, *b)
             } else if let Some((r, g, b)) = named_colors.get(input_ch) {
                 (*r, *g, *b)
+            } else if corner.is_some() {
+                (0, 0, 0) // Assumes Triano puzzles are black-and-white!
             } else {
                 // TODO: generate nice colors, like for chargrid (probably less critical here)
                 (128, 128, 128)
@@ -554,7 +568,7 @@ pub fn olsak_to_puzzle(olsak: &str) -> anyhow::Result<DynPuzzle> {
             };
 
             let color_info = ColorInfo {
-                ch: unique_ch.chars().next().unwrap(),
+                ch: unique_ch,
                 name: color_name.to_string(),
                 rgb,
                 color,
@@ -633,7 +647,8 @@ pub fn olsak_to_puzzle(olsak: &str) -> anyhow::Result<DynPuzzle> {
 
                         clues.push(Triano {
                             front_cap,
-                            body_len: count,
+                            body_len: count
+                                - (front_cap.is_some() as u16 + back_cap.is_some() as u16),
                             body_color: olsak_palette[&'1'].color,
                             back_cap,
                         });
