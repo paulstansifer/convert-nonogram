@@ -122,7 +122,7 @@ pub fn as_webpbn(puzzle: &Puzzle<Nono>) -> String {
         <?xml version="1.0"?>
         <puzzleset>
         <puzzle type="grid" defaultcolor="white">
-        <source>convert-nonogram</source>
+        <source>number-loom</source>
         "#});
     for color in puzzle.palette.values() {
         let (r, g, b) = color.rgb;

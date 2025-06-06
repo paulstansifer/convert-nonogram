@@ -247,7 +247,7 @@ pub enum NonogramFormat {
     Image,
     /// The widely-used format associated with http://webpbn.com.
     Webpbn,
-    /// (Export-only.) The format used by the 'olsak' solver.
+    /// The format used by the 'olsak' solver.
     Olsak,
     /// Informal text format: a grid of characters. Attempts some sensible matching of characters
     /// to colors, but results will vary. This is the only format that supports Triano puzzles.

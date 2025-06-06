@@ -1,137 +1,92 @@
-# `convert-nonogram`
+# `number-loom`
 
-`convert-nonogram` is a tool that converts images to nonograms. Currently, it only outputs the widely-used XML-based `webpbn` format and the `olsak` format (with the extension `.g`).
+`number-loom` is a powerful tool for constructing puzzles variously known as "Nonograms", "Paint By Numbers", "Griddlers" (and many other names).
 
-`convert-nonogram` does an exact image-to-nonogram format conversion. If you're looking for something that will take an arbitrary image and make a solveable (black and white) nonogram out of it, you can try [Walter Koster's tool].
+![Screenshot of a GUI editor](screenshot.png)
 
-[Walter Koster's tool]: https://liacs.leidenuniv.nl/~kosterswa/nono/sjoerd/indexeng.html
+It's still pretty janky, but it's also the most powerful such tool I know of. In particular, it can offer suggestions for how to make an unsolveable puzzle solveable!
 
-## How to use it
+## Features
 
-I use `convert-nonogram` to evaluate the solvability of nonograms while editing them as an image. You can install it with `cargo install convert-nonogram`.
+* Supports the following file formats:
+  * `webpbn`'s XML-based format (extension: `.xml` or `.pbn`)
+  * The format used by the Olsak solver (extension: `.g`)
+  * Images (typical extension: `.png`)
+  * `char-grid`, a plaintext grid of characters, which it attempts to infer a reasonable character-to-color mapping (extension: `.txt`)
+  * HTML, for export only, as a printable puzzle (extension `.html`)
+* Has (poorly-tested) support for "Trianograms", a rare variation with triangular cells that may appear as caps to clues.
+* A line-logic solver (currently not quite as powerful as it should be!) that provides some difficulty information.
+* A tool that searches for one-cell edits that make puzzles closer to solveable.
 
-All images supported by the [image] crate are supported as input, but if you try to create JPEG nonograms, you're going to have a bad time.
 
-[image]: https://crates.io/crates/image
+## Installation and usage
 
-### With `pbnsolve`
-This is what I do, since [`pbnsolve`] provides useful information about difficulty. You'll have to download and install it [from a tarball] (and probably edit the `Makefile` to help it find `libxml2` -- under Ubuntu, you'll need to do `sudo apt install libxml2-dev`)
+If you don't have `cargo` on your computer already, [install it through `rustup`](https://doc.rust-lang.org/cargo/getting-started/installation.html).
+
+Then run `cargo install number-loom`.
+
+To open the gui, you have to pick a nonogram to open: `number-loom examples/png/keys.png --gui`.
+
+To solve a puzzle from the command line, do `number-loom examples/png/hair_dryer.png`.
+
+To convert a puzzle from the command line, do `number-loom examples/png/hair_dryer.png /tmp/hair_dryer.xml`.
+
+## Solver
+
+The `number-loom` solver is a line-logic solver only. Algorithmically, it borrows a lot from `pbnsolve`, a powerful and fast nonogram solver, but `number-loom`'s heuristics for processing lines are intended to mimic human solver behavior rather than to maximize speed. (It also currently isn't as powerful as `pbnsolve`'s line-solver in `-aE` mode; this should be fixed!)
+
+It has two modes:
+  * "skim", which shoves all clues in a line as far as possible to one side and then the other, and checks to see if any of the clues overlap themselves between the two positions
+  * "scrub", which tries each color for each cell in a line, ruling out any colors that cause a contradiction
+
+It stores progress by noting each possibly-remaining color in each cell. Even though a human solver typically only notes down known cells, in my experience this corresponds pretty well to the sort of ad-hoc logic that solvers perform on color nonograms when they glance at the both lines that contain a cell.
+
+## GUI
+
+The GUI is very basic, but you can
+
+* Save and load
+* Zoom in and out
+* Adjust the size of the canvas (choosing which direction to add or remove lines)
+* Add, remove, or recolor palette entries
+* Solve the puzzle (it paints gray dots over unsolved cells), optionally automatically after each edit
+* Disambiguate
+
+### Disambiguation
+
+This may take a little bit of time, but it's typically reasonably fast for puzzles under 30x30. Cells will be painted with an alternate color, with an opacity proportional to the number of unsolved cells that are resolved if painted that color.
+
+
+## Usage with other solvers
+
+### `pbnsolve`
+
+You'll have to download and install `pbnsolve` [from a tarball] (and probably edit the `Makefile` to help it find `libxml2` -- under Ubuntu, you'll need to do `sudo apt install libxml2-dev`). Then (assuming it's on your `$PATH`):
 
 [`pbnsolve`]: https://webpbn.com/pbnsolve.html
 [from a tarball]: https://code.google.com/archive/p/pbnsolve/downloads
 
-Then, to evaluate an image, do:
-
 ```
-convert-nonogram examples/tea.png | pbnsolve -tu
+number-loom examples/png/stroller.png - --output-format webpbn | pbnsolve -tu
 ```
 
-(`-t` requests detailed difficulty output, and `-u` requires checking for uniqueness. You can add `-aL` (or `-aE`; I don't fully understand the difference) to stop solving when it's not possible to proceed with "line logic".  You can add `-b` to suppress output of the solved grid, but it's useful when debugging a non-unique nonogram or partially-solvable nonogram. `pbnsolve`'s README file documents its other flags.)
+It gives some difficulty information. I believe that "Lines Processed" very roughly corresponds to `number-loom`'s measurement of skims and scrubs (summed together). But `pbnsolve` is currently more powerful for difficult puzzles. For example, it can solve the stroller puzzle, even if you use `-aE` to restrict it to line logic.
 
+### `nonogrid`
 
-Here's a somewhat tricky nonogram that's solveable with only single-line reasoning. The "Lines processed" (relative to "Lines in puzzle", which is the sum of the width and height) is the best indicator of difficulty, I think:
-```
-$ convert-nonogram examples/shirt_and_tie.png | pbnsolve -tu
-UNIQUE LINE SOLUTION:
-.........aaaa..
-........a....aa
-....aaaaaaa...a
-...aa.....aa.ab
-..aa.......aabb
-..a...........b
-..a...a.aaaaa.b
-..a...a.a...a.b
-.aa..aa.aaaaa.b
-.a...aa.a...a.b
-.a..aaa.a...a.b
-aa..a.a..aaa..b
-a...a.a......bb
-a...a.a......bb
-aaaaa.a......bb
-ab.a..a......bb
-a..a..a......bb
-aaaa..a.......b
-......aaaaa....
-..........aaaaa
-Cells Solved: 300 of 300
-Lines in Puzzle: 35
-Lines Processed: 149 (400%)
-Exhaustive Search: 0 cells in 0 passes
-Backtracking: 0 probes, 0 guesses, 0 backtracks
-Probe Sequences: 0
-Plod cycles: 1, Sprint cycles: 0
-Cache Hits: 0/0 (0.0%) Adds: 0  Flushes: 0
-Processing Time: 0.000205 sec 
-```
+`nonogrid`, written in Rust, can provide a nice visual representation of ambiguities on the command line and is capable of non-line-logic solving.
 
-
-
-Here's the same nonogram with the button on the shirt sleeve removed. Now it requires backtracking to solve:
-```
-$ convert-nonogram examples/shirt_and_tie_no_button.png | pbnsolve -tu
-UNIQUE SOLUTION:
-.........aaaa..
-........a....aa
-....aaaaaaa...a
-...aa.....aa.ab
-..aa.......aabb
-..a...........b
-..a...a.aaaaa.b
-..a...a.a...a.b
-.aa..aa.aaaaa.b
-.a...aa.a...a.b
-.a..aaa.a...a.b
-aa..a.a..aaa..b
-a...a.a......bb
-a...a.a......bb
-aaaaa.a......bb
-a..a..a......bb
-a..a..a......bb
-aaaa..a.......b
-......aaaaa....
-..........aaaaa
-Cells Solved: 300 of 300
-Lines in Puzzle: 35
-Lines Processed: 1158 (3300%)
-Exhaustive Search: 13 cells in 2 passes
-Backtracking: 105 probes, 32 guesses, 32 backtracks
-Probe Sequences: 32
-  Found Contradiction: 31 (0 adj, 31 2-neigh)
-  Found Solution:      1 (0 adj, 1 2-neigh)
-  Choose Optimum:      0 (0 adj, 0 2-neigh)
-Total probes: 105 (0 adj, 105 2-neigh)
-Plod cycles: 1, Sprint cycles: 0
-Cache Hits: 576/1102 (52.0%) Adds: 494  Flushes: 0
-Processing Time: 0.001668 sec 
-```
-
-### With `nonogrid`
-
-`nonogrid` can provide a better and more comprehensive visual representation of ambiguities in non-unique nonograms. Sadly, it doesn't tell you anything about the difficulty of a nonogram.
-
-Make sure to install `nonogrid` with `cargo install --features=xml,web nonogrid` to allow parsing the XML format (and to enable directly downloading nonograms from the web, because why not). Then, to evaluate an image, do:
+Make sure to install `nonogrid` with `cargo install --features=xml,web,sat nonogrid` to allow parsing the XML-based webpbn format (and to enable directly downloading nonograms from the web, and the SAT-based solver, because why not). Then, to evaluate an image, do:
 
 ```
-convert-nonogram examples/tea.png | nonogrid
+number-loom examples/png/stroller.png - --output-format webpbn | nonogrid
 ```
 
-### With the Olsak solver
+### The Olsak solver
 The [Olsak solver] comes in a tarball and doesn't even have a makefile! (Just do `gcc grid.c -o grid` to build it.) It accepts a different input format. It does provide some difficulty information, but I haven't yet learned to understand it.
 
 [Olsak solver]:  http://www.olsak.net/grid.html
 
 ```
-convert-nonogram examples/tea.png --olsak | grid -
+number-loom examples/png/stroller.png - --output-format olsak | grid -
 ```
-
-### With Nonny
-
-[Nonny] is a nonogram editor that can open Olask-formatted nonograms. Its solver is a bit unsophisticated, but you can watch it work, which can give you an idea of what parts of the puzzle are easy to deal with and what parts are trickier. 
-
-[Nonny]: https://github.com/gkikola/nonny
-
-```
-convert-nonogram examples/tea.png --olsak > ~/.local/share/nonny/puzzles/tea.g
-```
-
-To export a puzzle from Nonny, I, uh, take a screenshot of the thumbnail in the Gimp, crop it, and resize the image with "none" as the interpolation technique. Maybe `convert-nonogram` ought to accept some other nonogram formats as input.

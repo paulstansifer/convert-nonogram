@@ -386,8 +386,10 @@ pub fn disambig_candidates(
                     ..
                 } = new_solution.to_puzzle().solve(false)?;
 
-                best_result = best_result.min(new_cells_left);
-                best_color = *new_col;
+                if new_cells_left < best_result {
+                    best_result = new_cells_left;
+                    best_color = *new_col;
+                }
             }
 
             res[x][y] = (best_color, (best_result as f32) / (orig_cells_left as f32));

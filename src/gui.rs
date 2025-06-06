@@ -17,7 +17,7 @@ use egui_material_icons::icons;
 pub fn edit_image(solution: Solution) {
     let native_options = eframe::NativeOptions::default();
     eframe::run_native(
-        "Puzzle Editor",
+        "Number Loom",
         native_options,
         Box::new(|cc| {
             let spacing = egui::Spacing {

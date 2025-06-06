@@ -151,7 +151,7 @@ pub fn char_grid_to_solution(char_grid: &str) -> Solution {
     let bg_ch = match bg_ch {
         Some(x) => x,
         None => {
-            eprintln!("convert-nonogram: Warning: unable to guess which character is supposed to be the background; using the upper-left corner");
+            eprintln!("number-loom: Warning: unable to guess which character is supposed to be the background; using the upper-left corner");
             char_grid.trim_start().chars().next().unwrap()
         }
     };
@@ -720,14 +720,14 @@ pub fn quality_check(solution: &Solution) {
 
     if bg_squares_found < (width + height) {
         eprintln!(
-            "convert-nonogram: warning: {} is a very small number of background squares",
+            "number-loom: warning: {} is a very small number of background squares",
             bg_squares_found
         );
     }
 
     if (width * height - bg_squares_found) < (width + height) {
         eprintln!(
-            "convert-nonogram: warning: {} is a very small number of foreground squares",
+            "number-loom: warning: {} is a very small number of foreground squares",
             width * height - bg_squares_found
         );
     }
@@ -740,7 +740,7 @@ pub fn quality_check(solution: &Solution) {
         );
     } else if num_colors > 10 {
         eprintln!(
-            "convert-nonogram: {} colors detected. That's probably too many.",
+            "number-loom: {} colors detected. That's probably too many.",
             num_colors
         )
     }
@@ -762,7 +762,7 @@ pub fn quality_check(solution: &Solution) {
                 < 30
             {
                 eprintln!(
-                    "convert-nonogram: warning: very similar colors found: {:?} and {:?}",
+                    "number-loom: warning: very similar colors found: {:?} and {:?}",
                     color.rgb, color2.rgb
                 );
             }
