@@ -156,14 +156,15 @@ fn solve_examples() {
     assert!(report.contains("stroller.png: 125 skims, 76 scrubs, 406 cells left"));
     assert!(report.contains("tandem_stationary_bike.png: 365 skims, 50 scrubs, 0 cells left"));
     assert!(report.contains("tea.png: 100 skims, 0 scrubs, 0 cells left"));
-    assert!(report.contains("tedious_dust.png: 91 skims, 22 scrubs, 0 cells left"));
+    assert!(report.contains("tedious_dust_10x10.png: 91 skims, 22 scrubs, 0 cells left"));
+    assert!(report.contains("tedious_dust_25x25.png: 521 skims, 89 scrubs, 0 cells left"));
     assert!(report.contains("tedious_dust_30x30.png: 985 skims, 206 scrubs, 0 cells left"));
-    assert!(report.contains("tedious_dust_large.png: 521 skims, 89 scrubs, 0 cells left"));
+    assert!(report.contains("tedious_dust_40x40.png: 1528 skims, 338 scrubs, 0 cells left"));
     assert!(report.contains("telephone_recevier.png: 34 skims, 0 scrubs, 0 cells left"));
     assert!(report.contains("tissue_box.png: 65 skims, 49 scrubs, 148 cells left"));
     assert!(report.contains("tornado.png: 96 skims, 15 scrubs, 0 cells left"));
     assert!(report.contains("usb_type_a.png: 319 skims, 50 scrubs, 0 cells left"));
     assert!(report.contains("usb_type_a_no_emblem.png: 326 skims, 79 scrubs, 0 cells left"));
 
-    assert_eq!(report.lines().collect::<Vec<_>>().len(), 33);
+    assert_eq!(report.lines().collect::<Vec<_>>().len(), 34);
 }
