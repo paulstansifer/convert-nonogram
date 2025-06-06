@@ -68,13 +68,7 @@ pub fn image_to_solution(image: &DynamicImage) -> Solution {
     // pbnsolve output looks weird if the default color isn't called "white".
     palette.insert(
         image::Rgba::<u8>([255, 255, 255, 255]),
-        ColorInfo {
-            ch: ' ',
-            name: "white".to_owned(),
-            rgb: (255, 255, 255),
-            color: puzzle::BACKGROUND,
-            corner: None,
-        },
+        ColorInfo::default_bg(),
     );
 
     let mut next_char = 'a';
@@ -92,13 +86,7 @@ pub fn image_to_solution(image: &DynamicImage) -> Solution {
                 next_color_idx += 1;
 
                 if r == 0 && g == 0 && b == 0 {
-                    return ColorInfo {
-                        ch: '◼',
-                        name: "black".to_string(),
-                        rgb: (0, 0, 0),
-                        color: this_color,
-                        corner: None,
-                    };
+                    return ColorInfo::default_fg(this_color);
                 }
 
                 next_char = (next_char as u8 + 1) as char;
@@ -160,10 +148,7 @@ pub fn char_grid_to_solution(char_grid: &str) -> Solution {
         bg_ch,
         ColorInfo {
             ch: bg_ch,
-            name: "white".to_string(),
-            rgb: (255, 255, 255),
-            color: BACKGROUND,
-            corner: None,
+            ..ColorInfo::default_bg()
         },
     );
     unused_chars.remove(&bg_ch);
@@ -173,16 +158,7 @@ pub fn char_grid_to_solution(char_grid: &str) -> Solution {
     // Look for a character that might be black (but it's not required to exist).
     for possible_black in ['#', 'B', 'b', '.', '■', '█', '1', '⬛'] {
         if unused_chars.contains(&possible_black) {
-            palette.insert(
-                possible_black,
-                ColorInfo {
-                    ch: possible_black,
-                    name: "black".to_string(),
-                    rgb: (0, 0, 0),
-                    color: Color(next_color),
-                    corner: None,
-                },
-            );
+            palette.insert(possible_black, ColorInfo::default_fg(Color(next_color)));
             next_color += 1;
             unused_chars.remove(&possible_black);
             break;
@@ -668,16 +644,7 @@ pub fn olsak_to_puzzle(olsak: &str) -> anyhow::Result<DynPuzzle> {
         }
     }
     if !olsak_palette.contains_key(&'0') {
-        olsak_palette.insert(
-            '0',
-            ColorInfo {
-                ch: ' ',
-                name: "white".to_string(),
-                rgb: (255, 255, 255),
-                color: BACKGROUND,
-                corner: None,
-            },
-        );
+        olsak_palette.insert('0', ColorInfo::default_bg());
     }
 
     let mut palette: HashMap<Color, ColorInfo> = olsak_palette

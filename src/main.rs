@@ -13,11 +13,13 @@ use clap::Parser;
 use import::quality_check;
 use puzzle::NonogramFormat;
 
+use crate::puzzle::Solution;
+
 #[derive(clap::Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
     /// Input path; use "-" for stdin
-    input_path: PathBuf,
+    input_path: Option<PathBuf>,
 
     /// Output path for format conversion; use "-" for stdout.
     /// If omitted, solves the nonogram and reports on the difficulty.
@@ -43,7 +45,15 @@ struct Args {
 fn main() -> std::io::Result<()> {
     let args = Args::parse();
 
-    let (puzzle, solution) = import::load(&args.input_path, args.input_format);
+    let input_path = match args.input_path {
+        Some(ip) => ip,
+        None => {
+            gui::edit_image(Solution::blank_bw(20, 20));
+            return Ok(());
+        }
+    };
+
+    let (puzzle, solution) = import::load(&input_path, args.input_format);
     if let Some(ref solution) = solution {
         quality_check(solution);
     }

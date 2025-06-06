@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     path::PathBuf,
     sync::{
         atomic::{AtomicBool, AtomicUsize},
@@ -58,12 +59,18 @@ struct NonogramGui {
 
 #[derive(Clone, Debug)]
 enum Action {
-    ChangeColor { changes: Vec<(usize, usize, Color)> },
-    ReplacePicture { picture: Solution },
+    ChangeColor {
+        changes: HashMap<(usize, usize), Color>,
+    },
+    ReplacePicture {
+        picture: Solution,
+    },
 }
 
+#[derive(PartialEq, Eq)]
 enum ActionMood {
-    Creative,
+    Normal,
+    Merge,
     Undo,
     Redo,
 }
@@ -97,9 +104,9 @@ impl NonogramGui {
         match action {
             Action::ChangeColor { changes } => Action::ChangeColor {
                 changes: changes
-                    .iter()
-                    .map(|(x, y, _)| (*x, *y, self.picture.grid[*x][*y]))
-                    .collect::<Vec<_>>(),
+                    .keys()
+                    .map(|(x, y)| ((*x, *y), self.picture.grid[*x][*y]))
+                    .collect::<HashMap<_, _>>(),
             },
             Action::ReplacePicture { picture: _ } => Action::ReplacePicture {
                 picture: self.picture.clone(),
@@ -108,12 +115,42 @@ impl NonogramGui {
     }
 
     fn perform(&mut self, action: Action, mood: ActionMood) {
+        use Action::*;
+        use ActionMood::*;
+
+        let mood = if mood == Merge {
+            match (self.undo_stack.last_mut(), &action) {
+                // Consecutive `ChangeColor`s can be merged with each other.
+                (
+                    Some(ChangeColor { changes }),
+                    ChangeColor {
+                        changes: new_changes,
+                    },
+                ) => {
+                    for ((x, y), col) in new_changes {
+                        if !changes.contains_key(&(*x, *y)) {
+                            changes.insert((*x, *y), self.picture.grid[*x][*y]);
+                            // Crucially, this only fires on a new cell!
+                            // Otherwise, we'd be flipping cells back and forth as long as we were
+                            // in them!
+                            self.picture.grid[*x][*y] = *col;
+                            self.report_stale = true;
+                        }
+                    }
+                    return; // Action is done; nothing else to do!
+                }
+                _ => Normal, // Unable to merge; add a new undo entry.
+            }
+        } else {
+            mood
+        };
+
         let reversed_action = self.reversed(&action);
 
         match action {
             Action::ChangeColor { changes } => {
-                for (x, y, old_color) in changes {
-                    self.picture.grid[x][y] = old_color;
+                for ((x, y), new_color) in changes {
+                    self.picture.grid[x][y] = new_color;
                 }
                 self.report_stale = true;
             }
@@ -128,14 +165,15 @@ impl NonogramGui {
         }
 
         match mood {
-            ActionMood::Creative => {
+            Merge => {}
+            Normal => {
                 self.undo_stack.push(reversed_action);
                 self.redo_stack.clear();
             }
-            ActionMood::Undo => {
+            Undo => {
                 self.redo_stack.push(reversed_action);
             }
-            ActionMood::Redo => {
+            Redo => {
                 self.undo_stack.push(reversed_action);
             }
         }
@@ -276,7 +314,7 @@ impl NonogramGui {
                     ..self.picture.clone()
                 },
             },
-            ActionMood::Creative,
+            ActionMood::Normal,
         );
     }
 
@@ -447,11 +485,15 @@ impl NonogramGui {
                         } else {
                             self.current_color
                         };
+                        let mut changes = HashMap::new();
+                        changes.insert((x, y), new_color);
                         self.perform(
-                            Action::ChangeColor {
-                                changes: vec![(x, y, new_color)],
+                            Action::ChangeColor { changes },
+                            if response.clicked() || response.drag_started() {
+                                ActionMood::Normal
+                            } else {
+                                ActionMood::Merge
                             },
-                            ActionMood::Creative,
                         );
                     }
                 }
@@ -510,13 +552,24 @@ impl NonogramGui {
     }
 
     fn loader(&mut self, ui: &mut egui::Ui) {
-        if ui.button(icons::ICON_FILE_OPEN).clicked() {
+        if ui.button("New blank").clicked() {
+            self.perform(
+                Action::ReplacePicture {
+                    picture: Solution::blank_bw(20, 20),
+                },
+                ActionMood::Normal,
+            );
+        }
+        if ui.button("Open").clicked() {
             if let Some(path) = rfd::FileDialog::new()
+                .add_filter(
+                    "all recognized formats",
+                    &["png", "gif", "bmp", "xml", "pbn", "txt", "g"],
+                )
                 .add_filter("image", &["png", "gif", "bmp"])
                 .add_filter("PBN", &["xml", "pbn"])
                 .add_filter("chargrid", &["txt"])
                 .add_filter("Olsak", &["g"])
-                .set_directory(".")
                 .pick_file()
             {
                 let (puzzle, solution) = crate::import::load(&path, None);
@@ -531,7 +584,7 @@ impl NonogramGui {
 
                 self.perform(
                     Action::ReplacePicture { picture: solution },
-                    ActionMood::Creative,
+                    ActionMood::Normal,
                 );
 
                 self.filename = path; // Should probably roll this into the action somehow too.
@@ -540,13 +593,16 @@ impl NonogramGui {
     }
 
     fn saver(&mut self, ui: &mut egui::Ui) {
-        if ui.button(icons::ICON_FILE_SAVE).clicked() {
+        if ui.button("Save").clicked() {
             if let Some(path) = rfd::FileDialog::new()
+                .add_filter(
+                    "all recognized formats",
+                    &["png", "gif", "bmp", "xml", "pbn", "txt", "g"],
+                )
                 .add_filter("image", &["png", "gif", "bmp"])
                 .add_filter("PBN", &["xml", "pbn"])
                 .add_filter("chargrid", &["txt"])
                 .add_filter("Olsak", &["g"])
-                .set_directory(".")
                 .save_file()
             {
                 crate::export::save(None, Some(&self.picture), &path, None).unwrap();

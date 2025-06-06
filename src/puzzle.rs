@@ -186,6 +186,27 @@ pub struct ColorInfo {
     pub corner: Option<Corner>,
 }
 
+impl ColorInfo {
+    pub fn default_bg() -> ColorInfo {
+        ColorInfo {
+            ch: ' ',
+            name: "white".to_string(),
+            rgb: (255, 255, 255),
+            color: BACKGROUND,
+            corner: None,
+        }
+    }
+    pub fn default_fg(color: Color) -> ColorInfo {
+        ColorInfo {
+            ch: '#',
+            name: "black".to_string(),
+            rgb: (0, 0, 0),
+            color,
+            corner: None,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Solution {
     pub clue_style: ClueStyle,
@@ -223,6 +244,17 @@ impl DynPuzzle {
 }
 
 impl Solution {
+    pub fn blank_bw(x_size: usize, y_size: usize) -> Solution {
+        Solution {
+            clue_style: ClueStyle::Nono,
+            palette: HashMap::from([
+                (BACKGROUND, ColorInfo::default_bg()),
+                (Color(1), ColorInfo::default_fg(Color(1))),
+            ]),
+            grid: vec![vec![BACKGROUND; y_size]; x_size],
+        }
+    }
+
     pub fn to_puzzle(&self) -> DynPuzzle {
         match self.clue_style {
             ClueStyle::Nono => DynPuzzle::Nono(solution_to_puzzle(self)),

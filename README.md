@@ -25,7 +25,7 @@ If you don't have `cargo` on your computer already, [install it through `rustup`
 
 Then run `cargo install number-loom`.
 
-To open the gui, you have to pick a nonogram to open: `number-loom examples/png/keys.png --gui`.
+To open the gui, you have to pick a nonogram to open: `number-loom` or `number-loom examples/png/keys.png --gui`.
 
 To solve a puzzle from the command line, do `number-loom examples/png/hair_dryer.png`.
 
@@ -56,6 +56,7 @@ The GUI is very basic, but you can
 
 This may take a little bit of time, but it's typically reasonably fast for puzzles under 30x30. Cells will be painted with an alternate color, with an opacity proportional to the number of unsolved cells that are resolved if painted that color.
 
+It operates by plain-old brute force. I think there is some potentially-useful less-precise information that could be generated faster, but I think this is more useful.
 
 ## Usage with other solvers
 
