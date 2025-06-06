@@ -157,6 +157,7 @@ fn solve_examples() {
     assert!(report.contains("tandem_stationary_bike.png: 365 skims, 50 scrubs, 0 cells left"));
     assert!(report.contains("tea.png: 100 skims, 0 scrubs, 0 cells left"));
     assert!(report.contains("tedious_dust.png: 91 skims, 22 scrubs, 0 cells left"));
+    assert!(report.contains("tedious_dust_30x30.png: 985 skims, 206 scrubs, 0 cells left"));
     assert!(report.contains("tedious_dust_large.png: 521 skims, 89 scrubs, 0 cells left"));
     assert!(report.contains("telephone_recevier.png: 34 skims, 0 scrubs, 0 cells left"));
     assert!(report.contains("tissue_box.png: 65 skims, 49 scrubs, 148 cells left"));
@@ -164,5 +165,5 @@ fn solve_examples() {
     assert!(report.contains("usb_type_a.png: 319 skims, 50 scrubs, 0 cells left"));
     assert!(report.contains("usb_type_a_no_emblem.png: 326 skims, 79 scrubs, 0 cells left"));
 
-    assert_eq!(report.lines().collect::<Vec<_>>().len(), 32);
+    assert_eq!(report.lines().collect::<Vec<_>>().len(), 33);
 }

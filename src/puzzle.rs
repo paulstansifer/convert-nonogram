@@ -229,6 +229,14 @@ impl Solution {
             ClueStyle::Triano => DynPuzzle::Triano(solution_to_triano_puzzle(self)),
         }
     }
+
+    pub fn x_size(&self) -> usize {
+        self.grid.len()
+    }
+
+    pub fn y_size(&self) -> usize {
+        self.grid.first().unwrap().len()
+    }
 }
 
 #[derive(Clone, Copy, Debug, clap::ValueEnum, Default, PartialEq, Eq)]

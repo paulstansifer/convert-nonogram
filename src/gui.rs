@@ -1,7 +1,14 @@
-use std::path::PathBuf;
+use std::{
+    path::PathBuf,
+    sync::{
+        atomic::{AtomicBool, AtomicUsize},
+        Arc, Mutex,
+    },
+    thread,
+};
 
 use crate::{
-    grid_solve,
+    grid_solve::{self, disambig_candidates},
     puzzle::{Color, ColorInfo, Corner, Solution, BACKGROUND},
 };
 use egui::{Color32, Frame, Pos2, Rect, RichText, Shape, Style, Vec2, Visuals};
@@ -21,7 +28,85 @@ struct NonogramGui {
 
     solve_report: String,
     report_stale: bool,
+    disambiguator: Arc<Disambiguator>,
+
     solved_mask: Vec<Vec<bool>>,
+}
+
+struct Disambiguator {
+    report: Mutex<Option<Vec<Vec<(Color, f32)>>>>,
+    progress: std::sync::atomic::AtomicUsize,
+    running: std::sync::atomic::AtomicBool,
+    should_stop: std::sync::atomic::AtomicBool,
+}
+
+impl Disambiguator {
+    fn new() -> Self {
+        Disambiguator {
+            report: Mutex::new(None),
+            progress: AtomicUsize::new(0),
+            running: AtomicBool::new(false),
+            should_stop: AtomicBool::new(false),
+        }
+    }
+
+    // Must do this any time the resolution changes!
+    // (Currently that only happens through `ReplacePicture`)
+    fn reset(&self) {
+        *self.report.lock().unwrap() = None;
+        self.progress.store(0, std::sync::atomic::Ordering::Relaxed);
+        self.running
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+        self.should_stop
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn disambig_widget(disambiguator: Arc<Self>, overall_gui: &mut NonogramGui, ui: &mut egui::Ui) {
+        let progress = disambiguator
+            .progress
+            .load(std::sync::atomic::Ordering::Relaxed);
+        let report_running = progress > 0 && progress < 9_990;
+
+        if !report_running {
+            if ui.button("Disambig report").clicked() {
+                overall_gui.report_stale = true; // Just to clear the dots from the screen.
+
+                let t_d = disambiguator.clone();
+                let solution = overall_gui.picture.clone();
+                thread::spawn(move || {
+                    match disambig_candidates(&solution, &t_d.progress, &t_d.should_stop) {
+                        Ok(rep) => {
+                            *t_d.report.lock().unwrap() = Some(rep);
+                        }
+                        Err(_) => {
+                            t_d.reset();
+                        }
+                    }
+                });
+            }
+        } else {
+            if ui.button("Stop").clicked() {
+                // HACK: we're using `progress`` as a 2-way channel.
+                disambiguator
+                    .should_stop
+                    .store(true, std::sync::atomic::Ordering::Relaxed);
+            }
+        }
+
+        ui.add(egui::ProgressBar::new(progress as f32 / 10_000.0).animate(report_running));
+        if ui
+            .add_enabled(
+                !disambiguator.report.lock().unwrap().is_none(),
+                egui::Button::new("Clear disambig report"),
+            )
+            .clicked()
+        {
+            *disambiguator.report.lock().unwrap() = None;
+            disambiguator
+                .progress
+                .store(0, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -59,6 +144,8 @@ impl NonogramGui {
 
             solve_report: "".to_string(),
             report_stale: true,
+            disambiguator: Arc::new(Disambiguator::new()),
+
             solved_mask,
         }
     }
@@ -93,6 +180,7 @@ impl NonogramGui {
                 self.solved_mask = solved_mask;
 
                 self.report_stale = true;
+                self.disambiguator.reset();
             }
         }
 
@@ -136,6 +224,7 @@ impl NonogramGui {
 fn cell_shape(
     ci: &ColorInfo,
     solved: bool,
+    disambig: (&ColorInfo, f32),
     x: usize,
     y: usize,
     to_screen: &egui::emath::RectTransform,
@@ -180,6 +269,18 @@ fn cell_shape(
             to_screen.scale().x * 0.3,
             egui::Color32::from_rgb(128, 128, 128),
         ))
+    }
+
+    if disambig.1 < 1.0 {
+        let (r, g, b) = disambig.0.rgb;
+        res.push(egui::Shape::rect_filled(
+            Rect::from_min_size(
+                to_screen * Pos2::new(x as f32 + 0.25, y as f32 + 0.25),
+                to_screen.scale() * 0.5,
+            ),
+            0.0,
+            Color32::from_rgba_unmultiplied(r, g, b, ((1.0 - disambig.1) * 255.0) as u8),
+        ));
     }
 
     res
@@ -411,6 +512,7 @@ impl NonogramGui {
             }
 
             let mut shapes = vec![];
+            let disambig_report = self.disambiguator.report.lock().unwrap();
 
             for y in 0..y_size {
                 for x in 0..x_size {
@@ -418,7 +520,14 @@ impl NonogramGui {
                     let color_info = &self.picture.palette[&cell];
                     let solved = self.solved_mask[x][y] || self.report_stale;
 
-                    for shape in cell_shape(color_info, solved, x, y, &to_screen) {
+                    let dr = if let Some(disambig_report) = disambig_report.as_ref() {
+                        let (c, score) = disambig_report[x][y];
+                        (&self.picture.palette[&c], score)
+                    } else {
+                        (&self.picture.palette[&BACKGROUND], 1.0)
+                    };
+
+                    for shape in cell_shape(color_info, solved, dr, x, y, &to_screen) {
                         shapes.push(shape);
                     }
                 }
@@ -581,6 +690,8 @@ impl eframe::App for NonogramGui {
                         },
                         &self.solve_report,
                     );
+
+                    Disambiguator::disambig_widget(self.disambiguator.clone(), self, ui);
                 });
 
                 self.canvas(ui);

@@ -1,10 +1,11 @@
 use std::fmt::Debug;
 
-use anyhow::Context;
+use anyhow::{bail, Context};
 use colored::Colorize;
 use ndarray::{ArrayView1, ArrayViewMut1};
 
 use crate::{
+    gui,
     line_solve::{scrub_heuristic, scrub_line, skim_heuristic, skim_line, Cell},
     puzzle::{Clue, Color, Puzzle, Solution, BACKGROUND},
 };
@@ -346,4 +347,63 @@ pub fn solve<C: Clue>(puzzle: &Puzzle<C>, trace_solve: bool) -> anyhow::Result<R
     }
 
     // Not printing; we probably already know what it looks like!
+}
+
+pub fn disambig_candidates(
+    s: &Solution,
+    progress: &std::sync::atomic::AtomicUsize,
+    should_stop: &std::sync::atomic::AtomicBool,
+) -> anyhow::Result<Vec<Vec<(Color, f32)>>> {
+    let p = s.to_puzzle();
+    // Probably redundant, but a small cost compared to the rest!
+    let Report {
+        cells_left: orig_cells_left,
+        ..
+    } = p.solve(false)?;
+
+    let mut res = vec![vec![(BACKGROUND, 0.0); s.grid.first().unwrap().len()]; s.grid.len()];
+    if orig_cells_left == 0 {
+        return Ok(res);
+    }
+
+    for x in 0..s.x_size() {
+        for y in 0..s.y_size() {
+            let mut best_result = std::usize::MAX;
+            let mut best_color = BACKGROUND;
+
+            for new_col in s.palette.keys() {
+                if *new_col == s.grid[x][y] {
+                    continue;
+                }
+                let mut new_grid = s.grid.clone();
+                new_grid[x][y] = *new_col;
+                let new_solution = Solution {
+                    grid: new_grid,
+                    ..s.clone()
+                };
+
+                let Report {
+                    cells_left: new_cells_left,
+                    ..
+                } = new_solution.to_puzzle().solve(false)?;
+
+                best_result = best_result.min(new_cells_left);
+                best_color = *new_col;
+            }
+
+            res[x][y] = (best_color, (best_result as f32) / (orig_cells_left as f32));
+
+            progress.store(
+                ((x * s.y_size() + y) * 10_000) / (s.x_size() * s.y_size()),
+                std::sync::atomic::Ordering::Relaxed,
+            );
+
+            if should_stop.load(std::sync::atomic::Ordering::Relaxed) {
+                bail!("terminated");
+            }
+        }
+    }
+    progress.store(10_000, std::sync::atomic::Ordering::Relaxed);
+
+    Ok(res)
 }
