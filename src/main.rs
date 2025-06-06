@@ -129,13 +129,13 @@ fn solve_examples() {
     }
     println!("{}", report);
 
-    assert!(report.contains("2:02.png: 167 skims, 16 scrubs, 0 cells left"));
     assert!(report.contains("apron.png: 77 skims, 0 scrubs, 0 cells left"));
     assert!(report.contains("bill_jeb_and_bob.png: 238 skims, 0 scrubs, 0 cells left"));
     assert!(report.contains("boring_blob.png: 32 skims, 0 scrubs, 0 cells left"));
     assert!(report.contains("boring_blob_large.png: 103 skims, 0 scrubs, 0 cells left"));
     assert!(report.contains("boring_hollow_blob.png: 34 skims, 0 scrubs, 0 cells left"));
     assert!(report.contains("carry_on_bag.png: 81 skims, 28 scrubs, 0 cells left"));
+    assert!(report.contains("clock.png: 167 skims, 16 scrubs, 0 cells left"));
     assert!(
         report.contains("compact_fluorescent_lightbulb.png: 286 skims, 29 scrubs, 0 cells left")
     );
