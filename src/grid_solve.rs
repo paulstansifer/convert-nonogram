@@ -5,7 +5,6 @@ use colored::Colorize;
 use ndarray::{ArrayView1, ArrayViewMut1};
 
 use crate::{
-    gui,
     line_solve::{scrub_heuristic, scrub_line, skim_heuristic, skim_line, Cell},
     puzzle::{Clue, Color, Puzzle, Solution, BACKGROUND},
 };
@@ -363,7 +362,7 @@ pub fn disambig_candidates(
 
     let mut res = vec![vec![(BACKGROUND, 0.0); s.grid.first().unwrap().len()]; s.grid.len()];
     if orig_cells_left == 0 {
-        return Ok(res);
+        bail!("No ambiguities!");
     }
 
     for x in 0..s.x_size() {

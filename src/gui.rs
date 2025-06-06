@@ -14,6 +14,29 @@ use crate::{
 use egui::{Color32, Frame, Pos2, Rect, RichText, Shape, Style, Vec2, Visuals};
 use egui_material_icons::icons;
 
+pub fn edit_image(solution: Solution) {
+    let native_options = eframe::NativeOptions::default();
+    eframe::run_native(
+        "Puzzle Editor",
+        native_options,
+        Box::new(|cc| {
+            let spacing = egui::Spacing {
+                interact_size: Vec2::new(20.0, 20.0), // Used by the color-picker buttons
+                ..egui::Spacing::default()
+            };
+            let style = Style {
+                visuals: Visuals::light(),
+                spacing,
+
+                ..Style::default()
+            };
+            cc.egui_ctx.set_style(style);
+            Ok(Box::new(NonogramGui::new(cc, solution)))
+        }),
+    )
+    .unwrap()
+}
+
 struct NonogramGui {
     picture: Solution,
     current_color: Color,
@@ -33,82 +56,6 @@ struct NonogramGui {
     solved_mask: Vec<Vec<bool>>,
 }
 
-struct Disambiguator {
-    report: Mutex<Option<Vec<Vec<(Color, f32)>>>>,
-    progress: std::sync::atomic::AtomicUsize,
-    running: std::sync::atomic::AtomicBool,
-    should_stop: std::sync::atomic::AtomicBool,
-}
-
-impl Disambiguator {
-    fn new() -> Self {
-        Disambiguator {
-            report: Mutex::new(None),
-            progress: AtomicUsize::new(0),
-            running: AtomicBool::new(false),
-            should_stop: AtomicBool::new(false),
-        }
-    }
-
-    // Must do this any time the resolution changes!
-    // (Currently that only happens through `ReplacePicture`)
-    fn reset(&self) {
-        *self.report.lock().unwrap() = None;
-        self.progress.store(0, std::sync::atomic::Ordering::Relaxed);
-        self.running
-            .store(false, std::sync::atomic::Ordering::Relaxed);
-        self.should_stop
-            .store(false, std::sync::atomic::Ordering::Relaxed);
-    }
-
-    fn disambig_widget(disambiguator: Arc<Self>, overall_gui: &mut NonogramGui, ui: &mut egui::Ui) {
-        let progress = disambiguator
-            .progress
-            .load(std::sync::atomic::Ordering::Relaxed);
-        let report_running = progress > 0 && progress < 9_990;
-
-        if !report_running {
-            if ui.button("Disambig report").clicked() {
-                overall_gui.report_stale = true; // Just to clear the dots from the screen.
-
-                let t_d = disambiguator.clone();
-                let solution = overall_gui.picture.clone();
-                thread::spawn(move || {
-                    match disambig_candidates(&solution, &t_d.progress, &t_d.should_stop) {
-                        Ok(rep) => {
-                            *t_d.report.lock().unwrap() = Some(rep);
-                        }
-                        Err(_) => {
-                            t_d.reset();
-                        }
-                    }
-                });
-            }
-        } else {
-            if ui.button("Stop").clicked() {
-                // HACK: we're using `progress`` as a 2-way channel.
-                disambiguator
-                    .should_stop
-                    .store(true, std::sync::atomic::Ordering::Relaxed);
-            }
-        }
-
-        ui.add(egui::ProgressBar::new(progress as f32 / 10_000.0).animate(report_running));
-        if ui
-            .add_enabled(
-                !disambiguator.report.lock().unwrap().is_none(),
-                egui::Button::new("Clear disambig report"),
-            )
-            .clicked()
-        {
-            *disambiguator.report.lock().unwrap() = None;
-            disambiguator
-                .progress
-                .store(0, std::sync::atomic::Ordering::Relaxed);
-        }
-    }
-}
-
 #[derive(Clone, Debug)]
 enum Action {
     ChangeColor { changes: Vec<(usize, usize, Color)> },
@@ -126,10 +73,6 @@ impl NonogramGui {
         egui_material_icons::initialize(&cc.egui_ctx);
         let solved_mask = vec![vec![false; picture.grid[0].len()]; picture.grid.len()];
 
-        // Customize egui here with cc.egui_ctx.set_fonts and cc.egui_ctx.set_visuals.
-        // Restore app state using cc.storage (requires the "persistence" feature).
-        // Use the cc.gl (a glow::Context) to create graphics shaders and buffers that you can use
-        // for e.g. egui::PaintCallback.
         NonogramGui {
             picture,
             current_color: BACKGROUND,
@@ -407,13 +350,16 @@ impl NonogramGui {
             };
 
             ui.horizontal(|ui| {
+                ui.label(RichText::new(icons::ICON_CHEVRON_FORWARD).size(24.0).color(
+                    Color32::from_black_alpha(if *color == picked_color { 255 } else { 0 }),
+                ));
+
+                let color_text = RichText::new(button_text)
+                    .monospace()
+                    .size(24.0)
+                    .color(egui::Color32::from_rgb(r, g, b));
                 if ui
-                    .button(
-                        RichText::new(button_text)
-                            .monospace()
-                            .size(24.0)
-                            .color(egui::Color32::from_rgb(r, g, b)),
-                    )
+                    .add_enabled(*color != picked_color, egui::Button::new(color_text))
                     .clicked()
                 {
                     picked_color = *color;
@@ -620,7 +566,6 @@ impl eframe::App for NonogramGui {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.horizontal(|ui| {
-                ui.label("Puzzle Editor");
                 if ui.button(icons::ICON_ZOOM_IN).clicked()
                     || ui.input(|i| i.key_pressed(egui::Key::Equals))
                 {
@@ -634,10 +579,11 @@ impl eframe::App for NonogramGui {
                 self.loader(ui);
                 self.saver(ui);
             });
+            ui.separator();
 
             ui.horizontal(|ui| {
                 ui.vertical(|ui| {
-                    ui.set_width(100.0);
+                    ui.set_width(120.0);
                     ui.horizontal(|ui| {
                         ui.label(format!("({})", self.undo_stack.len()));
                         if ui.button(icons::ICON_UNDO).clicked()
@@ -691,6 +637,8 @@ impl eframe::App for NonogramGui {
                         &self.solve_report,
                     );
 
+                    ui.separator();
+
                     Disambiguator::disambig_widget(self.disambiguator.clone(), self, ui);
                 });
 
@@ -700,25 +648,78 @@ impl eframe::App for NonogramGui {
     }
 }
 
-pub fn edit_image(solution: Solution) {
-    let native_options = eframe::NativeOptions::default();
-    eframe::run_native(
-        "Puzzle Editor",
-        native_options,
-        Box::new(|cc| {
-            let spacing = egui::Spacing {
-                interact_size: Vec2::new(20.0, 20.0), // Used by the color-picker buttons
-                ..egui::Spacing::default()
-            };
-            let style = Style {
-                visuals: Visuals::light(),
-                spacing,
+struct Disambiguator {
+    report: Mutex<Option<Vec<Vec<(Color, f32)>>>>,
+    progress: std::sync::atomic::AtomicUsize,
+    running: std::sync::atomic::AtomicBool,
+    should_stop: std::sync::atomic::AtomicBool,
+}
 
-                ..Style::default()
-            };
-            cc.egui_ctx.set_style(style);
-            Ok(Box::new(NonogramGui::new(cc, solution)))
-        }),
-    )
-    .unwrap()
+impl Disambiguator {
+    fn new() -> Self {
+        Disambiguator {
+            report: Mutex::new(None),
+            progress: AtomicUsize::new(0),
+            running: AtomicBool::new(false),
+            should_stop: AtomicBool::new(false),
+        }
+    }
+
+    // Must do this any time the resolution changes!
+    // (Currently that only happens through `ReplacePicture`)
+    fn reset(&self) {
+        *self.report.lock().unwrap() = None;
+        self.progress.store(0, std::sync::atomic::Ordering::Relaxed);
+        self.running
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+        self.should_stop
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn disambig_widget(disambiguator: Arc<Self>, overall_gui: &mut NonogramGui, ui: &mut egui::Ui) {
+        let progress = disambiguator
+            .progress
+            .load(std::sync::atomic::Ordering::Relaxed);
+        let report_running = progress > 0 && progress < 9_990;
+
+        if !report_running {
+            if ui.button("Disambiguate!").clicked() {
+                overall_gui.report_stale = true; // Just to clear the dots from the screen.
+
+                let t_d = disambiguator.clone();
+                let solution = overall_gui.picture.clone();
+                thread::spawn(move || {
+                    match disambig_candidates(&solution, &t_d.progress, &t_d.should_stop) {
+                        Ok(rep) => {
+                            *t_d.report.lock().unwrap() = Some(rep);
+                        }
+                        Err(_) => {
+                            t_d.reset();
+                        }
+                    }
+                });
+            }
+        } else {
+            if ui.button("Stop").clicked() {
+                // HACK: we're using `progress`` as a 2-way channel.
+                disambiguator
+                    .should_stop
+                    .store(true, std::sync::atomic::Ordering::Relaxed);
+            }
+        }
+
+        ui.add(egui::ProgressBar::new(progress as f32 / 10_000.0).animate(report_running));
+        if ui
+            .add_enabled(
+                !disambiguator.report.lock().unwrap().is_none(),
+                egui::Button::new("Clear"),
+            )
+            .clicked()
+        {
+            *disambiguator.report.lock().unwrap() = None;
+            disambiguator
+                .progress
+                .store(0, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
 }
