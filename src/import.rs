@@ -349,7 +349,7 @@ pub fn webpbn_to_puzzle(webpbn: &str) -> Puzzle<Nono> {
             }
 
             let hex_color = regex::Regex::new(
-                r"([0-9A-Za-z][0-9A-Za-z])([0-9A-Za-z][0-9A-Za-z])([0-9A-Za-z][0-9A-Za-z])",
+                r"^([0-9A-Za-z][0-9A-Za-z])([0-9A-Za-z][0-9A-Za-z])([0-9A-Za-z][0-9A-Za-z])$",
             )
             .unwrap();
 
@@ -482,7 +482,7 @@ pub fn olsak_to_puzzle(olsak: &str) -> anyhow::Result<DynPuzzle> {
         } else if cur_stanza == Preamble {
             /* Just comments */
         } else if cur_stanza == Palette {
-            let captures = regex::Regex::new(r"\s*(\S):(.)\s+(\S+)\s*(.*)")
+            let captures = regex::Regex::new(r"^\s*(\S):(.)\s+(\S+)\s*(.*)$")
                 .unwrap()
                 .captures(line)
                 .ok_or(anyhow::anyhow!("Malformed palette line {line}"))?;
@@ -528,12 +528,12 @@ pub fn olsak_to_puzzle(olsak: &str) -> anyhow::Result<DynPuzzle> {
                     '◣',
                 ),
                 (Some((_, _)), _) => {
-                    println!("Unsupported triangle color combination: {color_name}");
+                    eprintln!("Unsupported triangle color combination: {color_name}");
                     (None, unique_ch.chars().next().unwrap())
                 }
             };
 
-            let rgb = if let Some((_, [rs, gs, bs])) = regex::Regex::new(r"#(..)(..)(..)")
+            let rgb = if let Some((_, [rs, gs, bs])) = regex::Regex::new(r"^#(..)(..)(..)$")
                 .unwrap()
                 .captures(color_name)
                 .map(|c| c.extract())
@@ -543,12 +543,12 @@ pub fn olsak_to_puzzle(olsak: &str) -> anyhow::Result<DynPuzzle> {
                     u8::from_str_radix(gs, 16).unwrap(),
                     u8::from_str_radix(bs, 16).unwrap(),
                 )
+            } else if corner.is_some() {
+                (0, 0, 0) // Assumes Triano puzzles are black-and-white!
             } else if let Some((r, g, b)) = named_colors.get(color_name) {
                 (*r, *g, *b)
             } else if let Some((r, g, b)) = named_colors.get(input_ch) {
                 (*r, *g, *b)
-            } else if corner.is_some() {
-                (0, 0, 0) // Assumes Triano puzzles are black-and-white!
             } else {
                 // TODO: generate nice colors, like for chargrid (probably less critical here)
                 (128, 128, 128)
@@ -630,26 +630,34 @@ pub fn olsak_to_puzzle(olsak: &str) -> anyhow::Result<DynPuzzle> {
                     let mut clues = vec![];
 
                     for clue_str in clue_strs {
-                        let chars: Vec<char> = clue_str.chars().collect();
-                        let front_cap = if !chars.first().unwrap().is_numeric() {
-                            Some(olsak_glued_palettes[d][&(*chars.first().unwrap(), Left)].color)
+                        let mut chars: Vec<char> = clue_str.chars().collect();
+                        let front_cap = chars
+                            .first()
+                            .map(|c| olsak_glued_palettes[d].get(&(*c, Left)).map(|c| c.color))
+                            .flatten();
+                        if front_cap.is_some() {
+                            chars.remove(0);
+                        }
+                        let back_cap = chars
+                            .last()
+                            .map(|c| olsak_glued_palettes[d].get(&(*c, Right)).map(|c| c.color))
+                            .flatten();
+                        if back_cap.is_some() {
+                            chars.pop();
+                        }
+                        let body_color = if !chars.last().unwrap().is_numeric() {
+                            olsak_palette[&chars.pop().unwrap()].color
                         } else {
-                            None
+                            olsak_palette[&'1'].color
                         };
-                        let back_cap = if !chars.last().unwrap().is_numeric() {
-                            Some(olsak_glued_palettes[d][&(*chars.last().unwrap(), Right)].color)
-                        } else {
-                            None
-                        };
-                        let count = clue_str
-                            .trim_matches(|c: char| !c.is_numeric())
-                            .parse::<u16>()?;
+
+                        let body_len = chars.iter().collect::<String>().parse::<u16>()?
+                            - (front_cap.is_some() as u16 + back_cap.is_some() as u16);
 
                         clues.push(Triano {
                             front_cap,
-                            body_len: count
-                                - (front_cap.is_some() as u16 + back_cap.is_some() as u16),
-                            body_color: olsak_palette[&'1'].color,
+                            body_len,
+                            body_color,
                             back_cap,
                         });
                     }

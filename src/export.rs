@@ -1,9 +1,13 @@
-use std::path::{Path, PathBuf};
+use std::{
+    collections::{HashMap, HashSet},
+    iter::FromIterator,
+    path::{Path, PathBuf},
+};
 
 use axohtml::{html, text};
 use image::{Rgb, RgbImage};
 
-use crate::puzzle::{self, Clue, DynPuzzle, Nono, NonogramFormat, Puzzle, Solution};
+use crate::puzzle::{self, Clue, DynPuzzle, Nono, NonogramFormat, Puzzle, Solution, Triano};
 
 pub fn save(
     puzzle: Option<DynPuzzle>,
@@ -19,7 +23,7 @@ pub fn save(
         emit_image(solution.as_ref().unwrap(), path)
     } else {
         let output_data = match output_format {
-            NonogramFormat::Olsak => as_olsak(&puzzle.assume_nono()),
+            NonogramFormat::Olsak => puzzle.specialize(as_olsak_nono, as_olsak_triano),
             NonogramFormat::Webpbn => as_webpbn(&puzzle.assume_nono()),
             NonogramFormat::Html => match puzzle {
                 puzzle::DynPuzzle::Nono(p) => as_html(&p),
@@ -167,7 +171,25 @@ pub fn as_webpbn(puzzle: &Puzzle<Nono>) -> String {
     res
 }
 
-pub fn as_olsak(puzzle: &Puzzle<Nono>) -> String {
+pub fn olsak_ch(c: char, orig_to_sanitized: &mut HashMap<char, char>) -> char {
+    let existing = HashSet::<char>::from_iter(orig_to_sanitized.values().cloned());
+    *orig_to_sanitized.entry(c).or_insert_with(|| {
+        if c.is_alphanumeric() && !existing.contains(&c) {
+            return c;
+        } else {
+            for c in 'a'..'z' {
+                if !existing.contains(&c) {
+                    return c;
+                }
+            }
+            panic!("too many colors!")
+        }
+    })
+}
+
+pub fn as_olsak_nono(puzzle: &Puzzle<Nono>) -> String {
+    let mut orig_to_sanitized: HashMap<char, char> = HashMap::new();
+
     let mut res = String::new();
     res.push_str("#d\n");
 
@@ -176,10 +198,11 @@ pub fn as_olsak(puzzle: &Puzzle<Nono>) -> String {
     for color in puzzle.palette.values() {
         if color.rgb != (255, 255, 255) {
             let (r, g, b) = color.rgb;
-            res.push_str(&format!(
-                "   {}:{}  #{:02X}{:02X}{:02X}   {}\n",
-                color.ch, color.ch, r, g, b, color.name
-            ));
+            let ch = olsak_ch(color.ch, &mut orig_to_sanitized);
+            let (spec, comment) = (&format!("#{r:02X}{g:02X}{b:02X}"), color.name.to_string());
+
+            // I think the second `ch` can perhaps be any ASCII character.
+            res.push_str(&format!("   {ch}:{ch}  {spec}   {comment}\n",));
         }
     }
     res.push_str(": rows\n");
@@ -199,6 +222,94 @@ pub fn as_olsak(puzzle: &Puzzle<Nono>) -> String {
                 "{}{} ",
                 clue.count, puzzle.palette[&clue.color].ch
             ));
+        }
+        res.push('\n');
+    }
+
+    res
+}
+
+pub fn as_olsak_triano(puzzle: &Puzzle<Triano>) -> String {
+    use crate::puzzle::Corner;
+    let mut orig_to_sanitized: HashMap<char, char> = HashMap::new();
+
+    let mut res = String::new();
+    res.push_str("#d\n");
+
+    let palette = puzzle
+        .palette
+        .iter()
+        .map(|(color, color_info)| {
+            (
+                color,
+                puzzle::ColorInfo {
+                    ch: olsak_ch(color_info.ch, &mut orig_to_sanitized),
+                    ..color_info.clone()
+                },
+            )
+        })
+        .collect::<HashMap<_, _>>();
+
+    // Nonny doesn't like it if white isn't the first color in the palette.
+    res.push_str("   0:   #FFFFFF   white\n");
+    for color in palette.values() {
+        if color.rgb != (255, 255, 255) {
+            let (r, g, b) = color.rgb;
+            let ch = color.ch;
+            let (spec, comment) = match color.corner {
+                None => (&format!("#{r:02X}{g:02X}{b:02X}"), color.name.to_string()),
+                Some(Corner { upper, left }) => (
+                    &format!(
+                        "{}{}{}",
+                        if left { "black" } else { "white" },
+                        if left == upper { "/" } else { "\\" },
+                        if left { "white" } else { "black" },
+                    ),
+                    format!(
+                        "{}{}",
+                        if left { ">" } else { "<" },
+                        if upper { ">" } else { "<" }
+                    ),
+                ),
+            };
+
+            // I think the second `ch` can perhaps be any ASCII character.
+            res.push_str(&format!("   {ch}:{ch}  {spec}   {comment}\n",));
+        }
+    }
+    res.push_str(": rows\n");
+    for row in &puzzle.rows {
+        for clue in row {
+            if let Some(c) = clue.front_cap {
+                res.push(palette[&c].ch);
+            }
+            res.push_str(&format!(
+                "{}{}",
+                clue.body_len + (clue.front_cap.is_some() as u16 + clue.back_cap.is_some() as u16),
+                palette[&clue.body_color].ch
+            ));
+            if let Some(c) = clue.back_cap {
+                res.push(palette[&c].ch);
+            }
+            res.push(' ');
+        }
+        res.push('\n');
+    }
+    res.push_str(": columns\n");
+    for column in &puzzle.cols {
+        for clue in column {
+            if let Some(c) = clue.front_cap {
+                res.push(palette[&c].ch);
+            }
+            res.push_str(&format!(
+                "{}{}",
+                clue.body_len + (clue.front_cap.is_some() as u16 + clue.back_cap.is_some() as u16),
+                palette[&clue.body_color].ch
+            ));
+            if let Some(c) = clue.back_cap {
+                res.push(palette[&c].ch);
+            }
+            res.push(' ');
         }
         res.push('\n');
     }
@@ -238,4 +349,148 @@ pub fn as_char_grid(solution: &Solution) -> String {
         result.push('\n');
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{collections::HashMap, iter::FromIterator};
+
+    use anyhow::bail;
+
+    use crate::{
+        import::olsak_to_puzzle,
+        puzzle::{Color, ColorInfo, Corner, Puzzle, Triano},
+    };
+
+    fn match_march<'a, T>(
+        lhs: &'a [T],
+        rhs: &'a [T],
+    ) -> anyhow::Result<Box<dyn Iterator<Item = (&'a T, &'a T)> + 'a>> {
+        if lhs.len() != rhs.len() {
+            anyhow::bail!("Length mismatch: {} vs {}", lhs.len(), rhs.len());
+        }
+        Ok(Box::new(lhs.iter().zip(rhs.iter())))
+    }
+
+    fn colors_eq(
+        lhs: Color,
+        rhs: Color,
+        lhs_pal: &HashMap<Color, ColorInfo>,
+        rhs_pal: &HashMap<Color, ColorInfo>,
+    ) -> anyhow::Result<()> {
+        if lhs_pal[&lhs].rgb != rhs_pal[&rhs].rgb {
+            bail!(
+                "Color mismatch: {:?} vs {:?}",
+                lhs_pal[&lhs].rgb,
+                rhs_pal[&rhs].rgb
+            );
+        }
+        if lhs_pal[&lhs].corner != rhs_pal[&rhs].corner {
+            bail!("corner mismatch");
+        }
+        Ok(())
+    }
+
+    fn puzzles_eq(lhs: &Puzzle<Triano>, rhs: &Puzzle<Triano>) -> anyhow::Result<()> {
+        if lhs.rows.len() != rhs.rows.len() {
+            bail!(
+                "Row length mismatch {} vs {}",
+                lhs.rows.len(),
+                rhs.rows.len()
+            );
+        }
+
+        for (l_lines, r_lines, _dim) in
+            [(&lhs.cols, &rhs.cols, "col"), (&lhs.rows, &rhs.rows, "row")]
+        {
+            for (l_row, r_row) in match_march(&l_lines, &r_lines)? {
+                for (l_clue, r_clue) in match_march(l_row, r_row)? {
+                    if let (Some(l), Some(r)) = (l_clue.front_cap, r_clue.front_cap) {
+                        colors_eq(l, r, &lhs.palette, &rhs.palette)?;
+                    } else {
+                        if l_clue.front_cap.is_some() != r_clue.front_cap.is_some() {
+                            bail!("front cap mismatch");
+                        }
+                    }
+                    colors_eq(
+                        l_clue.body_color,
+                        r_clue.body_color,
+                        &lhs.palette,
+                        &rhs.palette,
+                    )?;
+                    if l_clue.body_len != r_clue.body_len {
+                        bail!(
+                            "body length mismatch: {} vs {}",
+                            l_clue.body_len,
+                            r_clue.body_len
+                        );
+                    }
+
+                    if let (Some(l), Some(r)) = (l_clue.back_cap, r_clue.back_cap) {
+                        colors_eq(l, r, &lhs.palette, &rhs.palette)?;
+                    } else {
+                        if l_clue.back_cap.is_some() != r_clue.back_cap.is_some() {
+                            bail!("front cap mismatch");
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn round_trip_olsak_triano() {
+        let p = Puzzle::<Triano> {
+            palette: HashMap::from_iter([
+                (Color(0), ColorInfo::default_bg()),
+                (Color(1), ColorInfo::default_fg(Color(1))),
+                (
+                    Color(2),
+                    ColorInfo {
+                        ch: '◢',
+                        name: "foo".to_string(),
+                        rgb: (0, 0, 0),
+                        color: Color(2),
+                        corner: Some(Corner {
+                            upper: false,
+                            left: false,
+                        }),
+                    },
+                ),
+            ]),
+            // Listen: I know this isn't a coherent puzzle
+            cols: vec![vec![
+                Triano {
+                    front_cap: Some(Color(2)),
+                    body_len: 3,
+                    body_color: Color(1),
+                    back_cap: None,
+                },
+                Triano {
+                    front_cap: None,
+                    body_len: 2,
+                    body_color: Color(1),
+                    back_cap: None,
+                },
+            ]],
+            rows: vec![vec![Triano {
+                front_cap: None,
+                body_len: 3,
+                body_color: Color(1),
+                back_cap: None,
+            }]],
+        };
+
+        let serialized = crate::export::as_olsak_triano(&p);
+
+        println!("{}", serialized);
+
+        let roundtripped = olsak_to_puzzle(&serialized).unwrap();
+
+        println!("{:?}", roundtripped);
+
+        puzzles_eq(&p, &roundtripped.assume_triano()).unwrap();
+    }
 }

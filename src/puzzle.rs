@@ -214,14 +214,14 @@ pub struct Solution {
     pub grid: Vec<Vec<Color>>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Puzzle<C: Clue> {
     pub palette: HashMap<Color, ColorInfo>, // should include the background!
     pub rows: Vec<Vec<C>>,
     pub cols: Vec<Vec<C>>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DynPuzzle {
     Nono(Puzzle<Nono>),
     Triano(Puzzle<Triano>),
@@ -235,10 +235,29 @@ impl DynPuzzle {
         }
     }
 
+    pub fn specialize<FN, FT, T>(&self, f_n: FN, f_t: FT) -> T
+    where
+        FN: FnOnce(&Puzzle<Nono>) -> T,
+        FT: FnOnce(&Puzzle<Triano>) -> T,
+    {
+        match self {
+            DynPuzzle::Nono(puzzle) => f_n(puzzle),
+            DynPuzzle::Triano(puzzle) => f_t(puzzle),
+        }
+    }
+
     pub fn assume_nono(self) -> Puzzle<Nono> {
         match self {
             DynPuzzle::Nono(puzzle) => puzzle,
             DynPuzzle::Triano(_) => panic!("must be a true nonogram!"),
+        }
+    }
+
+    #[cfg(test)] // Until needed normally
+    pub fn assume_triano(self) -> Puzzle<Triano> {
+        match self {
+            DynPuzzle::Triano(puzzle) => puzzle,
+            DynPuzzle::Nono(_) => panic!("must be a trianogram!"),
         }
     }
 }
