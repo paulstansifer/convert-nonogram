@@ -1,7 +1,7 @@
 [package]
 name = "number-loom"
 description = "Multipurpose GUI and CLI tool for constructing nonograms"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["Paul Stansifer <paul.stansifer@gmail.com>"]
 edition = "2018"
 license = "MIT"
