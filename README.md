@@ -4,6 +4,8 @@
 
 ![Screenshot of a GUI editor](screenshot.png)
 
+*Spot an uninvasive change that makes the solver able to solve the puzzle!*
+
 It's still pretty janky, but it's also the most powerful such tool I know of. In particular, it can offer suggestions for how to make an unsolveable puzzle solveable!
 
 ## Features
@@ -14,7 +16,7 @@ It's still pretty janky, but it's also the most powerful such tool I know of. In
   * Images (typical extension: `.png`)
   * `char-grid`, a plaintext grid of characters, which it attempts to infer a reasonable character-to-color mapping (extension: `.txt`)
   * HTML, for export only, as a printable puzzle (extension `.html`)
-* Has (poorly-tested) support for "Trianograms", a rare variation with triangular cells that may appear as caps to clues.
+* Has support for "Trianograms", a rare variation with triangular cells that may appear as caps to clues.
 * A line-logic solver (currently not quite as powerful as it should be!) that provides some difficulty information.
 * A tool that searches for one-cell edits that make puzzles closer to solveable.
 
@@ -25,11 +27,11 @@ If you don't have `cargo` on your computer already, [install it through `rustup`
 
 Then run `cargo install number-loom`.
 
-To open the gui, you have to pick a nonogram to open: `number-loom` or `number-loom examples/png/keys.png --gui`.
+To open the gui: `number-loom` or `number-loom examples/png/keys.png --gui`.
 
 To solve a puzzle from the command line, do `number-loom examples/png/hair_dryer.png`.
 
-To convert a puzzle from the command line, do `number-loom examples/png/hair_dryer.png /tmp/hair_dryer.xml`.
+To convert a puzzle from the command line, do `number-loom examples/png/hair_dryer.png /tmp/hair_dryer.xml`.  Use `--input-format` or `--output-format` to explicitly select `webpbn`, `olsak`, `image`, `char-grid`, or `html`. (The image format is still inferred from the filename.)
 
 ## Solver
 
@@ -41,22 +43,24 @@ It has two modes:
 
 It stores progress by noting each possibly-remaining color in each cell. Even though a human solver typically only notes down known cells, in my experience this corresponds pretty well to the sort of ad-hoc logic that solvers perform on color nonograms when they glance at the both lines that contain a cell.
 
+Looking at the number of scrubs and skims can tell you something about the difficulty of a puzzle. Unless you're aiming for an easy puzzle, the solver should have to do some scrubs. If the number of scrubs is higher than the width plus the length, or the number of skims is more than five times that, it's starting to get tedious relative to the size of the puzzle. This is a *very* rough guide, though; the solver definitely doesn't measure difficulty completely accurately.
+
 ## GUI
 
 The GUI is very basic, but you can
 
 * Save and load
 * Zoom in and out
-* Adjust the size of the canvas (choosing which direction to add or remove lines)
+* Adjust the size of the canvas from any side
 * Add, remove, or recolor palette entries
 * Solve the puzzle (it paints gray dots over unsolved cells), optionally automatically after each edit
 * Disambiguate
 
 ### Disambiguation
 
-This may take a little bit of time, but it's typically reasonably fast for puzzles under 40x40. Cells will be painted with an alternate color, with an opacity proportional to the number of unsolved cells that are resolved if painted that color.
+This may take a little bit of time, but it's typically reasonably fast for puzzles under 40x40. Cells will be painted with an alternate color, with an opacity proportional to the number of unsolved cells that are resolved if that single cell is changed to that color. (It only ever displays one color, but there might be others that work just as well!)
 
-It works by simply resolving the puzzle with every possible one-square change. But it caches intermediate deductions to speed the process up.
+It works by simply re-solving the puzzle with every possible one-square change. But it caches intermediate deductions to speed the process up. Typically, the more ambiguous the puzzle, the faster it is, so doing a guess-and-check with "auto-solve" turned on is a better way to hammer out the last few ambiguities.
 
 ## Usage with other solvers
 

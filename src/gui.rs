@@ -319,7 +319,11 @@ impl NonogramGui {
     }
 
     fn resizer(&mut self, ui: &mut egui::Ui) {
-        ui.label("Resize grid:");
+        ui.label(format!(
+            "Canvas size: {}x{}",
+            self.picture.x_size(),
+            self.picture.y_size(),
+        ));
 
         egui::Grid::new("resizer").show(ui, |ui| {
             ui.label("");
@@ -676,7 +680,10 @@ impl eframe::App for NonogramGui {
                                 solution: _solution,
                                 solved_mask,
                             }) => {
-                                self.solve_report = format!("{}/{}/{}", skims, scrubs, cells_left);
+                                self.solve_report = format!(
+                                    "skims: {} scrubs: {} unsolved cells: {}",
+                                    skims, scrubs, cells_left
+                                );
                                 self.solved_mask = solved_mask;
                             }
                             Err(e) => self.solve_report = format!("Error: {:?}", e),
