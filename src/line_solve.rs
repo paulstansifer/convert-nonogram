@@ -36,6 +36,10 @@ impl Cell {
         }
     }
 
+    pub fn raw(&self) -> u32 {
+        self.possible_color_mask
+    }
+
     /// Not much practical difference between this and `new`.
     pub fn new_anything() -> Cell {
         Cell {
@@ -254,6 +258,7 @@ fn bg_squares<C: Clue>(cs: &[C], len: u16) -> u16 {
     remaining
 }
 
+#[derive(Clone)]
 pub struct ScrubReport {
     pub affected_cells: Vec<usize>,
 }
@@ -452,13 +457,13 @@ fn packed_extents<C: Clue + Copy>(
 /// guaranteed to be inside a clue, that's useful information!
 pub fn skim_line<C: Clue + Copy>(
     clues: &[C],
-    mut lane: ArrayViewMut1<Cell>,
+    lane: &mut ArrayViewMut1<Cell>,
 ) -> anyhow::Result<ScrubReport> {
     let mut affected = Vec::<usize>::new();
     if clues.is_empty() {
         // Special case, so we can safely take the first and last clue.
         for i in 0..lane.len() {
-            learn_cell(BACKGROUND, &mut lane, i, &mut affected).context("Empty clue line")?;
+            learn_cell(BACKGROUND, lane, i, &mut affected).context("Empty clue line")?;
         }
         return Ok(ScrubReport {
             affected_cells: affected,
@@ -474,7 +479,7 @@ pub fn skim_line<C: Clue + Copy>(
         }
     }
     for i in 0..lane.len() {
-        learn_cell_intersect(possible_colors, &mut lane, i, &mut affected)?;
+        learn_cell_intersect(possible_colors, lane, i, &mut affected)?;
     }
 
     // Now slam the clues back and forth!
@@ -503,7 +508,7 @@ pub fn skim_line<C: Clue + Copy>(
                 clue_cell.actually_could_be(clue.color_at(idx - *left_extent + wiggle_idx));
             }
 
-            learn_cell_intersect(clue_cell, &mut lane, idx, &mut affected).context(format!(
+            learn_cell_intersect(clue_cell, lane, idx, &mut affected).context(format!(
                 "overlap: clue {:?} at {}. {:?} -> {:?}",
                 clue, idx, lane[idx], clue_cell
             ))?;
@@ -513,11 +518,11 @@ pub fn skim_line<C: Clue + Copy>(
         // Figure out why.
         if (*right_extent as i16 - *left_extent as i16) + 1 == clue.len() as i16 {
             if gap_before {
-                learn_cell(BACKGROUND, &mut lane, left_extent - 1, &mut affected)
+                learn_cell(BACKGROUND, lane, left_extent - 1, &mut affected)
                     .context(format!("gap before: {:?}", clue))?;
             }
             if gap_after {
-                learn_cell(BACKGROUND, &mut lane, right_extent + 1, &mut affected)
+                learn_cell(BACKGROUND, lane, right_extent + 1, &mut affected)
                     .context(format!("gap after: {:?}", clue))?;
             }
         }
@@ -542,7 +547,7 @@ pub fn skim_line<C: Clue + Copy>(
             continue;
         }
         for idx in (right_extent_prev + 1)..=(left_extent - 1) {
-            learn_cell(BACKGROUND, &mut lane, idx, &mut affected).context(format!(
+            learn_cell(BACKGROUND, lane, idx, &mut affected).context(format!(
                 "empty between skimmed clues: idx {}, clues: {:?}",
                 idx, clues
             ))?;
@@ -553,11 +558,10 @@ pub fn skim_line<C: Clue + Copy>(
     let rightmost = right_packed_left_extents.last().unwrap() + clues.last().unwrap().len();
 
     for i in 0..=leftmost {
-        learn_cell(BACKGROUND, &mut lane, i as usize, &mut affected)
-            .context(format!("lopen: {}", i))?;
+        learn_cell(BACKGROUND, lane, i as usize, &mut affected).context(format!("lopen: {}", i))?;
     }
     for i in rightmost..lane.len() {
-        learn_cell(BACKGROUND, &mut lane, i, &mut affected).context(format!("ropen: {}", i))?;
+        learn_cell(BACKGROUND, lane, i, &mut affected).context(format!("ropen: {}", i))?;
     }
 
     Ok(ScrubReport {
@@ -601,7 +605,7 @@ pub fn skim_heuristic<C: Clue>(clues: &[C], lane: ArrayView1<Cell>) -> i32 {
 
 pub fn scrub_line<C: Clue + Clone + Copy>(
     cs: &[C],
-    mut lane: ArrayViewMut1<Cell>,
+    lane: &mut ArrayViewMut1<Cell>,
 ) -> anyhow::Result<ScrubReport> {
     let mut res = ScrubReport {
         affected_cells: vec![],
@@ -617,12 +621,12 @@ pub fn scrub_line<C: Clue + Clone + Copy>(
 
             hypothetical_lane[i] = Cell::from_color(color);
 
-            match skim_line(cs, hypothetical_lane.view_mut()) {
+            match skim_line(cs, &mut hypothetical_lane.view_mut()) {
                 Ok(_) => { /* no luck: no contradiction */ }
                 Err(err) => {
                     // `color` is impossible here; we've learned something!
                     // Note that this isn't an error!
-                    learn_cell_not(color, &mut lane, i, &mut res.affected_cells)
+                    learn_cell_not(color, lane, i, &mut res.affected_cells)
                         .context(format!("scrub contradiction [{}] at {}", err, i))?;
                 }
             }
@@ -847,14 +851,22 @@ fn l(spec: &str) -> ndarray::Array1<Cell> {
 #[cfg(test)]
 fn test_scrub<C: Clue>(clues: Vec<C>, init: &str) -> ndarray::Array1<Cell> {
     let mut working_line = l(init);
-    scrub_line(&clues, working_line.rows_mut().into_iter().next().unwrap()).unwrap();
+    scrub_line(
+        &clues,
+        &mut working_line.rows_mut().into_iter().next().unwrap(),
+    )
+    .unwrap();
     working_line
 }
 
 #[cfg(test)]
 fn test_skim<C: Clue>(clues: Vec<C>, init: &str) -> ndarray::Array1<Cell> {
     let mut working_line = l(init);
-    skim_line(&clues, working_line.rows_mut().into_iter().next().unwrap()).unwrap();
+    skim_line(
+        &clues,
+        &mut working_line.rows_mut().into_iter().next().unwrap(),
+    )
+    .unwrap();
     working_line
 }
 

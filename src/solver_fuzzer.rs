@@ -113,7 +113,7 @@ mod tests {
         let mut sc_partial_solution = partial.clone();
         let mut sk_partial_solution = partial.clone();
 
-        match skim_line(clues, sk_partial_solution.view_mut()) {
+        match skim_line(clues, &mut sk_partial_solution.view_mut()) {
             Ok(_) => {
                 for j in 0..line.len() {
                     if !sk_partial_solution[j].can_be(line[j]) {
@@ -131,7 +131,7 @@ mod tests {
             }
         }
 
-        match scrub_line(clues, sc_partial_solution.view_mut()) {
+        match scrub_line(clues, &mut sc_partial_solution.view_mut()) {
             Ok(_) => {
                 for j in 0..line.len() {
                     if !sc_partial_solution[j].can_be(line[j]) {

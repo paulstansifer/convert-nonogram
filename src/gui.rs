@@ -574,7 +574,7 @@ impl NonogramGui {
             {
                 let (puzzle, solution) = crate::import::load(&path, None);
 
-                let solution = solution.unwrap_or_else(|| match puzzle.solve(false) {
+                let solution = solution.unwrap_or_else(|| match puzzle.plain_solve() {
                     Ok(report) => {
                         self.solved_mask = report.solved_mask;
                         report.solution
@@ -668,7 +668,7 @@ impl eframe::App for NonogramGui {
                     if ui.button("Solve").clicked() || (self.auto_solve && self.report_stale) {
                         let puzzle = self.picture.to_puzzle();
 
-                        match puzzle.solve(false) {
+                        match puzzle.plain_solve() {
                             Ok(grid_solve::Report {
                                 skims,
                                 scrubs,

@@ -1,11 +1,12 @@
-use std::fmt::Debug;
+use std::{collections::HashMap, fmt::Debug, vec};
 
 use anyhow::{bail, Context};
 use colored::Colorize;
 use ndarray::{ArrayView1, ArrayViewMut1};
 
 use crate::{
-    line_solve::{scrub_heuristic, scrub_line, skim_heuristic, skim_line, Cell},
+    export::as_char_grid,
+    line_solve::{scrub_heuristic, scrub_line, skim_heuristic, skim_line, Cell, ScrubReport},
     puzzle::{Clue, Color, Puzzle, Solution, BACKGROUND},
 };
 
@@ -213,7 +214,54 @@ fn display_step<'a, C: Clue>(
     }
 }
 
-pub fn solve<C: Clue>(puzzle: &Puzzle<C>, trace_solve: bool) -> anyhow::Result<Report> {
+pub type LineCache<C> = std::collections::HashMap<(Vec<C>, Vec<u32>), (ScrubReport, Vec<Cell>)>;
+
+fn op_or_cache<'a, C: Clue, F>(
+    f: F,
+    solve_lane: &LaneState<'a, C>,
+    lane: &mut ArrayViewMut1<Cell>,
+    cache: &mut Option<LineCache<C>>,
+) -> anyhow::Result<ScrubReport>
+where
+    F: Fn(&[C], &mut ArrayViewMut1<Cell>) -> anyhow::Result<ScrubReport>,
+{
+    if let Some(cache) = cache {
+        let entry = cache.entry((
+            solve_lane.clues.to_vec(),
+            lane.iter().map(|cell| cell.raw()).collect::<Vec<_>>(),
+        ));
+        match entry {
+            std::collections::hash_map::Entry::Occupied(o) => {
+                let (report, new_cells) = o.get();
+
+                for (idx, new_cell) in report.affected_cells.iter().zip(new_cells) {
+                    lane[*idx] = *new_cell;
+                }
+
+                return Ok(report.clone());
+            }
+            std::collections::hash_map::Entry::Vacant(v) => {
+                let report = f(solve_lane.clues, lane)?;
+                let mut cells_to_cache = vec![];
+
+                for idx in &report.affected_cells {
+                    cells_to_cache.push(lane[*idx]);
+                }
+
+                v.insert((report.clone(), cells_to_cache));
+                return Ok(report);
+            }
+        }
+    } else {
+        f(solve_lane.clues, lane)
+    }
+}
+
+pub fn solve<C: Clue>(
+    puzzle: &Puzzle<C>,
+    line_cache: &mut Option<LineCache<C>>,
+    trace_solve: bool,
+) -> anyhow::Result<Report> {
     let mut grid = Grid::from_elem((puzzle.rows.len(), puzzle.cols.len()), Cell::new(puzzle));
 
     let mut solve_lanes = vec![];
@@ -260,7 +308,8 @@ pub fn solve<C: Clue>(puzzle: &Puzzle<C>, trace_solve: bool) -> anyhow::Result<R
                 }
             };
 
-            let best_grid_lane = get_mut_grid_lane(best_clue_lane, &mut grid);
+            let mut best_grid_lane: ArrayViewMut1<Cell> =
+                get_mut_grid_lane(best_clue_lane, &mut grid);
 
             progress.set_message(format!(
                 "skims: {skims: >6}  scrubs: {scrubs: >6}  cells left: {cells_left: >6}  skims allowed: {allowed_skims: >3}  {} {}", if will_scrub {
@@ -276,28 +325,25 @@ pub fn solve<C: Clue>(puzzle: &Puzzle<C>, trace_solve: bool) -> anyhow::Result<R
             let report = if will_scrub {
                 best_clue_lane.scrubbed = true;
                 scrubs += 1;
-                scrub_line(best_clue_lane.clues, best_grid_lane).context(format!(
-                    "scrubbing {:?} with {:?}",
-                    best_clue_lane, orig_version_of_line
-                ))?
+                op_or_cache(scrub_line, best_clue_lane, &mut best_grid_lane, line_cache).context(
+                    format!(
+                        "scrubbing {:?} with {:?}",
+                        best_clue_lane, orig_version_of_line
+                    ),
+                )?
             } else {
                 best_clue_lane.skimmed = true;
                 skims += 1;
-                skim_line(best_clue_lane.clues, best_grid_lane).context(format!(
+                skim_line(best_clue_lane.clues, &mut best_grid_lane).context(format!(
                     "skimming {:?} with {:?}",
                     best_clue_lane, orig_version_of_line
                 ))?
             };
 
-            best_clue_lane.rescore(&grid, /*was_processed=*/ true);
-
-            // TODO: there's got to be a simpler way than calling `get_mut_grid_lane` again.
-            // Maybe just have `skim`/`scrub` report the difference directly
             let known_before = orig_version_of_line.iter().filter(|c| c.is_known()).count();
-            let known_after = get_mut_grid_lane(best_clue_lane, &mut grid)
-                .iter()
-                .filter(|c| c.is_known())
-                .count();
+            let known_after = best_grid_lane.iter().filter(|c| c.is_known()).count();
+
+            best_clue_lane.rescore(&grid, /*was_processed=*/ true);
 
             cells_left -= known_after - known_before;
 
@@ -353,12 +399,14 @@ pub fn disambig_candidates(
     progress: &std::sync::atomic::AtomicUsize,
     should_stop: &std::sync::atomic::AtomicBool,
 ) -> anyhow::Result<Vec<Vec<(Color, f32)>>> {
+    let mut solve_cache = crate::puzzle::DynSolveCache::new();
+
     let p = s.to_puzzle();
     // Probably redundant, but a small cost compared to the rest!
     let Report {
         cells_left: orig_cells_left,
         ..
-    } = p.solve(false)?;
+    } = solve_cache.solve(&p)?;
 
     let mut res = vec![vec![(BACKGROUND, 0.0); s.grid.first().unwrap().len()]; s.grid.len()];
     if orig_cells_left == 0 {
@@ -384,7 +432,7 @@ pub fn disambig_candidates(
                 let Report {
                     cells_left: new_cells_left,
                     ..
-                } = new_solution.to_puzzle().solve(false)?;
+                } = solve_cache.solve(&new_solution.to_puzzle())?;
 
                 if new_cells_left < best_result {
                     best_result = new_cells_left;

@@ -7,7 +7,10 @@ mod gui;
 mod import;
 mod line_solve;
 mod puzzle;
-use std::path::PathBuf;
+use std::{
+    path::PathBuf,
+    sync::atomic::{AtomicBool, AtomicUsize},
+};
 
 use clap::Parser;
 use import::quality_check;
@@ -40,6 +43,9 @@ struct Args {
     /// Opens the GUI editor
     #[arg(long, default_value_t)]
     gui: bool,
+
+    #[arg(long, default_value_t)]
+    disambiguate: bool,
 }
 
 fn main() -> std::io::Result<()> {
@@ -60,11 +66,59 @@ fn main() -> std::io::Result<()> {
 
     if args.gui {
         // TODO: this sorta duplicates some code in gui
-        let solution = solution.unwrap_or_else(|| match puzzle.solve(false) {
-            Ok(report) => report.solution,
-            Err(_) => panic!("Impossible puzzle!"),
-        });
+        // TODO: check the solution is complete!
+        let solution =
+            solution.unwrap_or_else(|| puzzle.plain_solve().expect("impossible puzzle").solution);
         gui::edit_image(solution);
+        return Ok(());
+    } else if args.disambiguate {
+        let solution =
+            solution.unwrap_or_else(|| puzzle.plain_solve().expect("impossible puzzle").solution);
+        let progress = AtomicUsize::new(0);
+        let should_stop = AtomicBool::new(false);
+        let disambig =
+            grid_solve::disambig_candidates(&solution, &progress, &should_stop).expect("");
+
+        let mut best_result = f32::MAX;
+        for row in &disambig {
+            for cell in row {
+                best_result = best_result.min(cell.1);
+            }
+        }
+
+        let display_threshold = 1.0 - (1.0 - best_result) * 0.75;
+
+        let display_threshold = if best_result == 0.0 {
+            println!("Able to completely disambiguate with a one-cell change!");
+            0.0
+        } else {
+            println!(
+                "Best improvement brings ambiguities to {:0}%; showing everything {:0}% or better",
+                best_result * 100.0,
+                display_threshold * 100.0
+            );
+
+            display_threshold
+        };
+
+        use colored::Colorize;
+
+        for y in 0..solution.y_size() {
+            for x in 0..solution.x_size() {
+                let ci = &solution.palette[&solution.grid[x][y]];
+                if disambig[x][y].1 <= display_threshold {
+                    let new_ch = &solution.palette[&disambig[x][y].0].ch;
+                    let new_ch = if *new_ch == ' ' { '☒' } else { *new_ch };
+
+                    print!("{}", new_ch.to_string().red())
+                } else {
+                    print!("{}", ci.ch)
+                }
+            }
+
+            println!("");
+        }
+
         return Ok(());
     }
 
@@ -73,7 +127,7 @@ fn main() -> std::io::Result<()> {
             export::save(Some(puzzle), solution.as_ref(), &path, args.output_format).unwrap();
         }
 
-        None => match puzzle.solve(args.trace_solve) {
+        None => match puzzle.solve_with_args(args.trace_solve) {
             Ok(grid_solve::Report {
                 skims,
                 scrubs,
@@ -118,7 +172,7 @@ fn solve_examples() {
         let path = entry.path();
         if path.is_file() {
             let (puzzle, _solution) = import::load(&path, None);
-            match puzzle.solve(false) {
+            match puzzle.plain_solve() {
                 Ok(Report {
                     skims,
                     scrubs,

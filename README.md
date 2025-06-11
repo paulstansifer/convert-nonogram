@@ -54,9 +54,9 @@ The GUI is very basic, but you can
 
 ### Disambiguation
 
-This may take a little bit of time, but it's typically reasonably fast for puzzles under 30x30. Cells will be painted with an alternate color, with an opacity proportional to the number of unsolved cells that are resolved if painted that color.
+This may take a little bit of time, but it's typically reasonably fast for puzzles under 40x40. Cells will be painted with an alternate color, with an opacity proportional to the number of unsolved cells that are resolved if painted that color.
 
-It operates by plain-old brute force. I think there is some potentially-useful less-precise information that could be generated faster, but I think this is more useful.
+It works by simply resolving the puzzle with every possible one-square change. But it caches intermediate deductions to speed the process up.
 
 ## Usage with other solvers
 

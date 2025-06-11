@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 use std::fmt::Debug;
+use std::hash::Hash;
 use std::path::PathBuf;
 
 use crate::import::{solution_to_puzzle, solution_to_triano_puzzle};
-pub trait Clue: Clone + Copy + Debug {
+pub trait Clue: Clone + Copy + Debug + PartialEq + Eq + Hash {
     fn style() -> ClueStyle;
 
     fn new_solid(color: Color, count: u16) -> Self;
@@ -31,7 +32,7 @@ impl Debug for Nono {
     }
 }
 
-#[derive(PartialEq, Eq, Clone, Copy)]
+#[derive(PartialEq, Eq, Clone, Copy, Hash)]
 pub struct Nono {
     pub color: Color,
     pub count: u16,
@@ -75,7 +76,7 @@ impl Clue for Nono {
     }
 }
 
-#[derive(PartialEq, Eq, Clone, Copy)]
+#[derive(PartialEq, Eq, Clone, Copy, Hash)]
 pub struct Triano {
     pub front_cap: Option<Color>,
     pub body_len: u16,
@@ -227,11 +228,43 @@ pub enum DynPuzzle {
     Triano(Puzzle<Triano>),
 }
 
+pub struct DynSolveCache {
+    nono_cache: Option<crate::grid_solve::LineCache<Nono>>,
+    triano_cache: Option<crate::grid_solve::LineCache<Triano>>,
+}
+
+impl DynSolveCache {
+    pub fn new() -> Self {
+        DynSolveCache {
+            nono_cache: Some(HashMap::new()),
+            triano_cache: Some(HashMap::new()),
+        }
+    }
+
+    pub fn solve(&mut self, p: &DynPuzzle) -> anyhow::Result<crate::grid_solve::Report> {
+        match p {
+            DynPuzzle::Nono(puzzle) => {
+                crate::grid_solve::solve(puzzle, &mut self.nono_cache, false)
+            }
+            DynPuzzle::Triano(puzzle) => {
+                crate::grid_solve::solve(puzzle, &mut self.triano_cache, false)
+            }
+        }
+    }
+}
+
 impl DynPuzzle {
-    pub fn solve(&self, trace_solve: bool) -> anyhow::Result<crate::grid_solve::Report> {
+    pub fn plain_solve(&self) -> anyhow::Result<crate::grid_solve::Report> {
         match self {
-            DynPuzzle::Nono(puzzle) => crate::grid_solve::solve(puzzle, trace_solve),
-            DynPuzzle::Triano(puzzle) => crate::grid_solve::solve(puzzle, trace_solve),
+            DynPuzzle::Nono(puzzle) => crate::grid_solve::solve(puzzle, &mut None, false),
+            DynPuzzle::Triano(puzzle) => crate::grid_solve::solve(puzzle, &mut None, false),
+        }
+    }
+
+    pub fn solve_with_args(&self, trace_solve: bool) -> anyhow::Result<crate::grid_solve::Report> {
+        match self {
+            DynPuzzle::Nono(puzzle) => crate::grid_solve::solve(puzzle, &mut None, trace_solve),
+            DynPuzzle::Triano(puzzle) => crate::grid_solve::solve(puzzle, &mut None, trace_solve),
         }
     }
 
