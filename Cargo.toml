@@ -34,3 +34,21 @@ rand = "0.8.5"
 [[test]]
 name = "solver-fuzzer"
 path = "src/solver_fuzzer.rs"
+
+# native:
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+env_logger = "0.11.8"
+
+# web:
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.3", features = ["wasm_js"] }
+getrandom_0_2 = { package = "getrandom", version = "0.2", features = ["js"] }
+wasm-bindgen-futures = "0.4.50"
+web-sys = "0.3.77"
+
+[profile.release]
+opt-level = 2 # fast and small wasm
+
+# Optimize all dependencies even in debug builds:
+[profile.dev.package."*"]
+opt-level = 2

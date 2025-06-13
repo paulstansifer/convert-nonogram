@@ -15,27 +15,45 @@ use crate::{
 use egui::{Color32, Frame, Pos2, Rect, RichText, Shape, Style, Vec2, Visuals};
 use egui_material_icons::icons;
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn edit_image(solution: Solution) {
     let native_options = eframe::NativeOptions::default();
     eframe::run_native(
         "Number Loom",
         native_options,
-        Box::new(|cc| {
-            let spacing = egui::Spacing {
-                interact_size: Vec2::new(20.0, 20.0), // Used by the color-picker buttons
-                ..egui::Spacing::default()
-            };
-            let style = Style {
-                visuals: Visuals::light(),
-                spacing,
-
-                ..Style::default()
-            };
-            cc.egui_ctx.set_style(style);
-            Ok(Box::new(NonogramGui::new(cc, solution)))
-        }),
+        Box::new(|cc| Ok(Box::new(NonogramGui::new(cc, solution)))),
     )
     .unwrap()
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn edit_image(solution: Solution) {
+    use eframe::wasm_bindgen::JsCast as _;
+
+    let web_options = eframe::WebOptions::default();
+
+    wasm_bindgen_futures::spawn_local(async {
+        let document = web_sys::window()
+            .expect("No window")
+            .document()
+            .expect("No document");
+
+        let canvas = document
+            .get_element_by_id("the_canvas_id")
+            .expect("Failed to find the_canvas_id")
+            .dyn_into::<web_sys::HtmlCanvasElement>()
+            .expect("the_canvas_id was not a HtmlCanvasElement");
+
+        let start_result = eframe::WebRunner::new()
+            .start(
+                canvas,
+                web_options,
+                Box::new(|cc| Ok(Box::new(NonogramGui::new(cc, solution)))),
+            )
+            .await;
+
+        // The example code removes the spinner here, but it doesn't seem necessary.
+    });
 }
 
 struct NonogramGui {
@@ -555,6 +573,11 @@ impl NonogramGui {
         });
     }
 
+    // TODO: need to make load/save async!
+    #[cfg(target_arch = "wasm32")]
+    fn loader(&mut self, ui: &mut egui::Ui) {}
+
+    #[cfg(not(target_arch = "wasm32"))]
     fn loader(&mut self, ui: &mut egui::Ui) {
         if ui.button("New blank").clicked() {
             self.perform(
@@ -596,6 +619,10 @@ impl NonogramGui {
         }
     }
 
+    #[cfg(target_arch = "wasm32")]
+    fn saver(&mut self, ui: &mut egui::Ui) {}
+
+    #[cfg(not(target_arch = "wasm32"))]
     fn saver(&mut self, ui: &mut egui::Ui) {
         if ui.button("Save").clicked() {
             if let Some(path) = rfd::FileDialog::new()
@@ -618,6 +645,19 @@ impl NonogramGui {
 
 impl eframe::App for NonogramGui {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Styling. Has to be here instead of `edit_image` to take effect on the Web.
+        let spacing = egui::Spacing {
+            interact_size: Vec2::new(20.0, 20.0), // Used by the color-picker buttons
+            ..egui::Spacing::default()
+        };
+        let style = Style {
+            visuals: Visuals::light(),
+            spacing,
+
+            ..Style::default()
+        };
+        ctx.set_style(style);
+
         let _background_color = Color32::from_rgb(
             self.picture.palette[&BACKGROUND].rgb.0,
             self.picture.palette[&BACKGROUND].rgb.1,
