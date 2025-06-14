@@ -59,7 +59,7 @@ fn main() -> std::io::Result<()> {
         }
     };
 
-    let (puzzle, solution) = import::load(&input_path, args.input_format);
+    let (puzzle, solution) = import::load_path(&input_path, args.input_format);
     if let Some(ref solution) = solution {
         quality_check(solution);
     }
@@ -171,7 +171,7 @@ fn solve_examples() {
         let entry = entry.unwrap();
         let path = entry.path();
         if path.is_file() {
-            let (puzzle, _solution) = import::load(&path, None);
+            let (puzzle, _solution) = import::load_path(&path, None);
             match puzzle.plain_solve() {
                 Ok(Report {
                     skims,

@@ -38,9 +38,17 @@ path = "src/solver_fuzzer.rs"
 # native:
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 env_logger = "0.11.8"
+# poll-promise_native = { package = "poll-promise", version = "0.3.0", features = [
+#     "tokio",
+# ] }
 
 # web:
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+# # This uses 'git' as a hack, since otherwise it won't let us have two copies of the
+# # same crate with different features, even if they're under different targets.
+# poll-promise_web = { git= "https://github.com/EmbarkStudios/poll-promise.git", package = "poll-promise", version = "0.3.0", features = [
+#     "web",
+# ] }
 getrandom = { version = "0.3", features = ["wasm_js"] }
 getrandom_0_2 = { package = "getrandom", version = "0.2", features = ["js"] }
 wasm-bindgen-futures = "0.4.50"

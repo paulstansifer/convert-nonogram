@@ -347,12 +347,15 @@ pub enum ClueStyle {
     Triano,
 }
 
-pub fn infer_format(path: &PathBuf, format_arg: Option<NonogramFormat>) -> NonogramFormat {
+// `path` may be either a filename or a path
+pub fn infer_format(path: &str, format_arg: Option<NonogramFormat>) -> NonogramFormat {
     if let Some(format) = format_arg {
         return format;
     }
 
-    match path.extension().and_then(|s| s.to_str()) {
+    let ext = path.rsplit_once('.').map(|x| x.1);
+
+    match ext {
         Some("png") | Some("bmp") | Some("gif") => NonogramFormat::Image,
         Some("xml") | Some("pbn") => NonogramFormat::Webpbn,
         Some("g") => NonogramFormat::Olsak,

@@ -15,7 +15,7 @@ pub fn save(
     path: &PathBuf,
     format: Option<NonogramFormat>,
 ) -> anyhow::Result<()> {
-    let output_format = puzzle::infer_format(&path, format);
+    let output_format = puzzle::infer_format(path.to_str().unwrap(), format);
 
     let puzzle = puzzle.unwrap_or_else(|| solution.expect("gotta have SOMETHING").to_puzzle());
 

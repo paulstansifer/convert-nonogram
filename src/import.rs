@@ -25,33 +25,48 @@ fn read_path(path: &PathBuf) -> String {
     res
 }
 
-pub fn load(path: &PathBuf, format: Option<NonogramFormat>) -> (DynPuzzle, Option<Solution>) {
-    let input_format = puzzle::infer_format(&path, format);
+pub fn load_path(path: &PathBuf, format: Option<NonogramFormat>) -> (DynPuzzle, Option<Solution>) {
+    let mut bytes = vec![];
+    if path == &PathBuf::from("-") {
+        std::io::stdin().read_to_end(&mut bytes).unwrap();
+    } else {
+        bytes = std::fs::read(path).unwrap();
+    }
+
+    load(&path.to_str().unwrap(), bytes, format)
+}
+
+pub fn load(
+    filename: &str,
+    bytes: Vec<u8>,
+    format: Option<NonogramFormat>,
+) -> (DynPuzzle, Option<Solution>) {
+    let input_format = puzzle::infer_format(&filename, format);
 
     match input_format {
         NonogramFormat::Html => {
             panic!("HTML input is not supported.")
         }
         NonogramFormat::Image => {
-            let img = image::open(path).unwrap();
+            let img = image::load_from_memory(&bytes).unwrap();
             let solution = image_to_solution(&img);
 
             (solution.to_puzzle(), Some(solution))
         }
         NonogramFormat::Webpbn => {
-            let webpbn_string = read_path(&path);
+            let webpbn_string = String::from_utf8(bytes).unwrap();
             let puzzle: puzzle::Puzzle<puzzle::Nono> = webpbn_to_puzzle(&webpbn_string);
 
             (Nono::to_dyn(puzzle), None)
         }
         NonogramFormat::CharGrid => {
-            let grid_string = read_path(&path);
+            let grid_string = String::from_utf8(bytes).unwrap();
             let solution = char_grid_to_solution(&grid_string);
 
             (solution.to_puzzle(), Some(solution))
         }
         NonogramFormat::Olsak => {
-            let olsak_string = read_path(&path);
+            let olsak_string = String::from_utf8(bytes).unwrap();
             let puzzle = olsak_to_puzzle(&olsak_string).unwrap();
 
             (puzzle, None)

@@ -1,6 +1,5 @@
 use std::{
     collections::HashMap,
-    path::PathBuf,
     sync::{
         atomic::{AtomicBool, AtomicUsize},
         Arc, Mutex,
@@ -60,7 +59,7 @@ struct NonogramGui {
     picture: Solution,
     current_color: Color,
     scale: f32,
-    filename: PathBuf,
+    filename: String,
 
     undo_stack: Vec<Action>,
     redo_stack: Vec<Action>,
@@ -102,7 +101,7 @@ impl NonogramGui {
             picture,
             current_color: BACKGROUND,
             scale: 10.0,
-            filename: PathBuf::new(), // TODO: integrate with everything else better!
+            filename: String::new(), // TODO: integrate with everything else better!
 
             undo_stack: vec![],
             redo_stack: vec![],
@@ -587,8 +586,9 @@ impl NonogramGui {
                 ActionMood::Normal,
             );
         }
+        let mut open_task = None;
         if ui.button("Open").clicked() {
-            if let Some(path) = rfd::FileDialog::new()
+            open_task = rfd::FileDialog::new()
                 .add_filter(
                     "all recognized formats",
                     &["png", "gif", "bmp", "xml", "pbn", "txt", "g"],
@@ -598,24 +598,30 @@ impl NonogramGui {
                 .add_filter("chargrid", &["txt"])
                 .add_filter("Olsak", &["g"])
                 .pick_file()
-            {
-                let (puzzle, solution) = crate::import::load(&path, None);
+                .map(|pb| Some((pb.clone(), std::fs::read(pb).unwrap())))
+                .flatten();
+        }
 
-                let solution = solution.unwrap_or_else(|| match puzzle.plain_solve() {
-                    Ok(report) => {
-                        self.solved_mask = report.solved_mask;
-                        report.solution
-                    }
-                    Err(_) => panic!("Impossible puzzle!"),
-                });
+        if let Some((filename, contents)) = open_task {
+            println!("got something!");
+            let (puzzle, solution) =
+                crate::import::load(&filename.to_str().unwrap(), contents, None);
 
-                self.perform(
-                    Action::ReplacePicture { picture: solution },
-                    ActionMood::Normal,
-                );
+            let solution = solution.unwrap_or_else(|| match puzzle.plain_solve() {
+                Ok(report) => {
+                    self.solved_mask = report.solved_mask;
+                    report.solution
+                }
+                Err(_) => panic!("Impossible puzzle!"),
+            });
 
-                self.filename = path; // Should probably roll this into the action somehow too.
-            }
+            self.perform(
+                Action::ReplacePicture { picture: solution },
+                ActionMood::Normal,
+            );
+
+            // Should probably roll this into the action somehow too:
+            self.filename = filename.to_str().unwrap().to_string()
         }
     }
 
@@ -637,7 +643,7 @@ impl NonogramGui {
                 .save_file()
             {
                 crate::export::save(None, Some(&self.picture), &path, None).unwrap();
-                self.filename = path;
+                self.filename = path.to_str().unwrap().to_owned();
             }
         }
     }
