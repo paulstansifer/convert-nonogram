@@ -603,7 +603,6 @@ impl NonogramGui {
         }
 
         if let Some((filename, contents)) = open_task {
-            println!("got something!");
             let (puzzle, solution) =
                 crate::import::load(&filename.to_str().unwrap(), contents, None);
 
@@ -634,12 +633,13 @@ impl NonogramGui {
             if let Some(path) = rfd::FileDialog::new()
                 .add_filter(
                     "all recognized formats",
-                    &["png", "gif", "bmp", "xml", "pbn", "txt", "g"],
+                    &["png", "gif", "bmp", "xml", "pbn", "txt", "g", "html"],
                 )
                 .add_filter("image", &["png", "gif", "bmp"])
                 .add_filter("PBN", &["xml", "pbn"])
                 .add_filter("chargrid", &["txt"])
                 .add_filter("Olsak", &["g"])
+                .add_filter("HTML", &["html"])
                 .save_file()
             {
                 crate::export::save(None, Some(&self.picture), &path, None).unwrap();

@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::hash::Hash;
-use std::path::PathBuf;
 
 use crate::import::{solution_to_puzzle, solution_to_triano_puzzle};
 pub trait Clue: Clone + Copy + Debug + PartialEq + Eq + Hash {

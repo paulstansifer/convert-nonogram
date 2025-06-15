@@ -1,11 +1,10 @@
-use std::{collections::HashMap, fmt::Debug, vec};
+use std::{fmt::Debug, vec};
 
 use anyhow::{bail, Context};
 use colored::Colorize;
 use ndarray::{ArrayView1, ArrayViewMut1};
 
 use crate::{
-    export::as_char_grid,
     line_solve::{scrub_heuristic, scrub_line, skim_heuristic, skim_line, Cell, ScrubReport},
     puzzle::{Clue, Color, Puzzle, Solution, BACKGROUND},
 };

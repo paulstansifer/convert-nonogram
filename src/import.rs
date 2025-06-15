@@ -13,18 +13,6 @@ use crate::puzzle::{
     Solution, Triano, BACKGROUND,
 };
 
-fn read_path(path: &PathBuf) -> String {
-    let mut res = String::new();
-    if path == &PathBuf::from("-") {
-        std::io::stdin()
-            .read_to_string(&mut res)
-            .expect("bad read_to_string!");
-    } else {
-        res = String::from_utf8(std::fs::read(path).unwrap()).expect("not valid UTF-8!");
-    };
-    res
-}
-
 pub fn load_path(path: &PathBuf, format: Option<NonogramFormat>) -> (DynPuzzle, Option<Solution>) {
     let mut bytes = vec![];
     if path == &PathBuf::from("-") {
