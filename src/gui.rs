@@ -80,7 +80,7 @@ struct NonogramGui {
     picture: Solution,
     current_color: Color,
     scale: f32,
-    opened_file_receiver: Option<mpsc::Receiver<Solution>>,
+    opened_file_receiver: mpsc::Receiver<Solution>,
 
     undo_stack: Vec<Action>,
     redo_stack: Vec<Action>,
@@ -122,7 +122,7 @@ impl NonogramGui {
             picture,
             current_color: BACKGROUND,
             scale: 10.0,
-            opened_file_receiver: None,
+            opened_file_receiver: mpsc::channel().1,
 
             undo_stack: vec![],
             redo_stack: vec![],
@@ -604,7 +604,7 @@ impl NonogramGui {
         }
         if ui.button("Open").clicked() {
             let (sender, receiver) = mpsc::channel();
-            self.opened_file_receiver = Some(receiver);
+            self.opened_file_receiver = receiver;
 
             spawn_async(async move {
                 let handle = rfd::AsyncFileDialog::new()
@@ -632,13 +632,11 @@ impl NonogramGui {
             });
         }
 
-        if let Some(receiver) = &self.opened_file_receiver {
-            if let Ok(solution) = receiver.try_recv() {
-                self.perform(
-                    Action::ReplacePicture { picture: solution },
-                    ActionMood::Normal,
-                );
-            }
+        if let Ok(solution) = self.opened_file_receiver.try_recv() {
+            self.perform(
+                Action::ReplacePicture { picture: solution },
+                ActionMood::Normal,
+            );
         }
     }
 
