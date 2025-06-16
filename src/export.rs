@@ -5,24 +5,35 @@ use std::{
 };
 
 use axohtml::{html, text};
-use image::{Rgb, RgbImage};
+use image::{DynamicImage, ImageFormat, Rgb, RgbImage};
 
 use crate::puzzle::{self, Clue, DynPuzzle, Nono, NonogramFormat, Puzzle, Solution, Triano};
 
-pub fn save(
+pub fn to_bytes(
     puzzle: Option<DynPuzzle>,
     solution: Option<&Solution>,
-    path: &PathBuf,
+    file_name: Option<String>,
     format: Option<NonogramFormat>,
-) -> anyhow::Result<()> {
-    let output_format = puzzle::infer_format(path.to_str().unwrap(), format);
+) -> anyhow::Result<Vec<u8>> {
+    let format = format.unwrap_or_else(|| {
+        puzzle::infer_format(
+            file_name
+                .as_ref()
+                .expect("gotta have SOME clue about format"),
+            None,
+        )
+    });
 
     let puzzle = puzzle.unwrap_or_else(|| solution.expect("gotta have SOMETHING").to_puzzle());
 
-    if output_format == NonogramFormat::Image {
-        emit_image(solution.as_ref().unwrap(), path)
+    let bytes = if format == NonogramFormat::Image {
+        let file_name = file_name.expect("need file name to pick image format");
+        match solution {
+            Some(solution) => as_image_bytes(solution, file_name),
+            None => as_image_bytes(&puzzle.plain_solve().unwrap().solution, file_name),
+        }?
     } else {
-        let output_data = match output_format {
+        match format {
             NonogramFormat::Olsak => puzzle.specialize(as_olsak_nono, as_olsak_triano),
             NonogramFormat::Webpbn => as_webpbn(&puzzle.assume_nono()),
             NonogramFormat::Html => match puzzle {
@@ -31,15 +42,27 @@ pub fn save(
             },
             NonogramFormat::Image => panic!(),
             NonogramFormat::CharGrid => as_char_grid(solution.as_ref().unwrap()),
-        };
-        if path == &PathBuf::from("-") {
-            print!("{}", output_data);
-            Ok(())
-        } else {
-            std::fs::write(path, output_data)?;
-            Ok(())
         }
-    }
+        .into_bytes()
+    };
+
+    Ok(bytes)
+}
+
+pub fn save(
+    puzzle: Option<DynPuzzle>,
+    solution: Option<&Solution>,
+    path: &PathBuf,
+    format: Option<NonogramFormat>,
+) -> anyhow::Result<()> {
+    let bytes = to_bytes(
+        puzzle,
+        solution,
+        Some(path.to_str().unwrap().to_string()),
+        format,
+    )?;
+
+    Ok(std::fs::write(path, bytes)?)
 }
 
 pub fn as_html<C: Clue>(puzzle: &Puzzle<C>) -> String {
@@ -317,7 +340,7 @@ pub fn as_olsak_triano(puzzle: &Puzzle<Triano>) -> String {
     res
 }
 
-pub fn emit_image<P>(solution: &Solution, path: P) -> anyhow::Result<()>
+pub fn as_image_bytes<P>(solution: &Solution, path_or_filename: P) -> anyhow::Result<Vec<u8>>
 where
     P: AsRef<Path>,
 {
@@ -334,7 +357,17 @@ where
         }
     }
 
-    Ok(image.save(path)?)
+    let image_format = ImageFormat::from_path(path_or_filename)?;
+
+    let dyn_image: DynamicImage = image::DynamicImage::ImageRgb8(image);
+
+    let mut writer = std::io::BufWriter::new(Vec::new());
+
+    dyn_image.write_to(&mut writer, image_format)?;
+
+    Ok(writer
+        .into_inner()
+        .expect("Couldn't get inner Vec<u8> from BufWriter"))
 }
 
 pub fn as_char_grid(solution: &Solution) -> String {

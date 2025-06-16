@@ -2,12 +2,13 @@ use std::{
     collections::HashMap,
     sync::{
         atomic::{AtomicBool, AtomicUsize},
-        Arc, Mutex,
+        mpsc, Arc, Mutex,
     },
     thread,
 };
 
 use crate::{
+    export::to_bytes,
     grid_solve::{self, disambig_candidates},
     puzzle::{Color, ColorInfo, Corner, Solution, BACKGROUND},
 };
@@ -43,7 +44,7 @@ pub fn edit_image(solution: Solution) {
             .dyn_into::<web_sys::HtmlCanvasElement>()
             .expect("the_canvas_id was not a HtmlCanvasElement");
 
-        let start_result = eframe::WebRunner::new()
+        let _start_result = eframe::WebRunner::new()
             .start(
                 canvas,
                 web_options,
@@ -55,11 +56,31 @@ pub fn edit_image(solution: Solution) {
     });
 }
 
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen_futures::spawn_local as spawn_async;
+
+#[cfg(not(target_arch = "wasm32"))]
+fn spawn_async<F>(future: F)
+where
+    F: std::future::Future<Output = ()> + 'static + std::marker::Send,
+{
+    // This sort of weird construct allows us to avoid multithreaded tokio,
+    // which isn't available on wasm32 (cargo doesn't like having the same crate have different
+    // features on different platforms, and we might want to use some tokio features on wasm32)
+    std::thread::spawn(move || {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(future);
+    });
+}
+
 struct NonogramGui {
     picture: Solution,
     current_color: Color,
     scale: f32,
-    filename: String,
+    opened_file_receiver: Option<mpsc::Receiver<Solution>>,
 
     undo_stack: Vec<Action>,
     redo_stack: Vec<Action>,
@@ -101,7 +122,7 @@ impl NonogramGui {
             picture,
             current_color: BACKGROUND,
             scale: 10.0,
-            filename: String::new(), // TODO: integrate with everything else better!
+            opened_file_receiver: None,
 
             undo_stack: vec![],
             redo_stack: vec![],
@@ -572,11 +593,6 @@ impl NonogramGui {
         });
     }
 
-    // TODO: need to make load/save async!
-    #[cfg(target_arch = "wasm32")]
-    fn loader(&mut self, ui: &mut egui::Ui) {}
-
-    #[cfg(not(target_arch = "wasm32"))]
     fn loader(&mut self, ui: &mut egui::Ui) {
         if ui.button("New blank").clicked() {
             self.perform(
@@ -586,65 +602,70 @@ impl NonogramGui {
                 ActionMood::Normal,
             );
         }
-        let mut open_task = None;
         if ui.button("Open").clicked() {
-            open_task = rfd::FileDialog::new()
-                .add_filter(
-                    "all recognized formats",
-                    &["png", "gif", "bmp", "xml", "pbn", "txt", "g"],
-                )
-                .add_filter("image", &["png", "gif", "bmp"])
-                .add_filter("PBN", &["xml", "pbn"])
-                .add_filter("chargrid", &["txt"])
-                .add_filter("Olsak", &["g"])
-                .pick_file()
-                .map(|pb| Some((pb.clone(), std::fs::read(pb).unwrap())))
-                .flatten();
+            let (sender, receiver) = mpsc::channel();
+            self.opened_file_receiver = Some(receiver);
+
+            spawn_async(async move {
+                let handle = rfd::AsyncFileDialog::new()
+                    .add_filter(
+                        "all recognized formats",
+                        &["png", "gif", "bmp", "xml", "pbn", "txt", "g"],
+                    )
+                    .add_filter("image", &["png", "gif", "bmp"])
+                    .add_filter("PBN", &["xml", "pbn"])
+                    .add_filter("chargrid", &["txt"])
+                    .add_filter("Olsak", &["g"])
+                    .pick_file()
+                    .await;
+
+                if let Some(handle) = handle {
+                    let (puzzle, solution) =
+                        crate::import::load(&handle.file_name(), handle.read().await, None);
+
+                    // TODO: at least error out for unsolveable inputs
+                    let solution =
+                        solution.unwrap_or_else(|| puzzle.plain_solve().unwrap().solution);
+
+                    sender.send(solution).unwrap();
+                }
+            });
         }
 
-        if let Some((filename, contents)) = open_task {
-            let (puzzle, solution) =
-                crate::import::load(&filename.to_str().unwrap(), contents, None);
-
-            let solution = solution.unwrap_or_else(|| match puzzle.plain_solve() {
-                Ok(report) => {
-                    self.solved_mask = report.solved_mask;
-                    report.solution
-                }
-                Err(_) => panic!("Impossible puzzle!"),
-            });
-
-            self.perform(
-                Action::ReplacePicture { picture: solution },
-                ActionMood::Normal,
-            );
-
-            // Should probably roll this into the action somehow too:
-            self.filename = filename.to_str().unwrap().to_string()
+        if let Some(receiver) = &self.opened_file_receiver {
+            if let Ok(solution) = receiver.try_recv() {
+                self.perform(
+                    Action::ReplacePicture { picture: solution },
+                    ActionMood::Normal,
+                );
+            }
         }
     }
 
-    #[cfg(target_arch = "wasm32")]
-    fn saver(&mut self, ui: &mut egui::Ui) {}
-
-    #[cfg(not(target_arch = "wasm32"))]
     fn saver(&mut self, ui: &mut egui::Ui) {
         if ui.button("Save").clicked() {
-            if let Some(path) = rfd::FileDialog::new()
-                .add_filter(
-                    "all recognized formats",
-                    &["png", "gif", "bmp", "xml", "pbn", "txt", "g", "html"],
-                )
-                .add_filter("image", &["png", "gif", "bmp"])
-                .add_filter("PBN", &["xml", "pbn"])
-                .add_filter("chargrid", &["txt"])
-                .add_filter("Olsak", &["g"])
-                .add_filter("HTML", &["html"])
-                .save_file()
-            {
-                crate::export::save(None, Some(&self.picture), &path, None).unwrap();
-                self.filename = path.to_str().unwrap().to_owned();
-            }
+            let solution_copy = self.picture.clone();
+            spawn_async(async move {
+                let handle = rfd::AsyncFileDialog::new()
+                    .add_filter(
+                        "all recognized formats",
+                        &["png", "gif", "bmp", "xml", "pbn", "txt", "g", "html"],
+                    )
+                    .add_filter("image", &["png", "gif", "bmp"])
+                    .add_filter("PBN", &["xml", "pbn"])
+                    .add_filter("chargrid", &["txt"])
+                    .add_filter("Olsak", &["g"])
+                    .add_filter("HTML (for printing)", &["html"])
+                    .save_file()
+                    .await;
+
+                if let Some(handle) = handle {
+                    let bytes =
+                        to_bytes(None, Some(&solution_copy), Some(handle.file_name()), None)
+                            .unwrap();
+                    handle.write(&bytes).await.unwrap();
+                }
+            });
         }
     }
 }
