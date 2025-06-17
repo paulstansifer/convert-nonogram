@@ -56,21 +56,19 @@ fn main() -> std::io::Result<()> {
         }
     };
 
-    let (puzzle, solution) = import::load_path(&input_path, args.input_format);
-    if let Some(ref solution) = solution {
+    let mut document = import::load_path(&input_path, args.input_format);
+    if let Some(ref solution) = document.try_solution() {
         quality_check(solution);
     }
 
     if args.gui {
         // TODO: this sorta duplicates some code in gui
         // TODO: check the solution is complete!
-        let solution =
-            solution.unwrap_or_else(|| puzzle.plain_solve().expect("impossible puzzle").solution);
+        let solution = document.take_solution().expect("impossible puzzle");
         gui::edit_image(solution);
         return Ok(());
     } else if args.disambiguate {
-        let solution =
-            solution.unwrap_or_else(|| puzzle.plain_solve().expect("impossible puzzle").solution);
+        let solution = document.take_solution().expect("impossible puzzle");
 
         let disambig = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -127,10 +125,10 @@ fn main() -> std::io::Result<()> {
 
     match args.output_path {
         Some(path) => {
-            export::save(Some(puzzle), solution.as_ref(), &path, args.output_format).unwrap();
+            export::save(&mut document, &path, args.output_format).unwrap();
         }
 
-        None => match puzzle.solve_with_args(args.trace_solve) {
+        None => match document.puzzle().solve_with_args(args.trace_solve) {
             Ok(grid_solve::Report {
                 skims,
                 scrubs,
@@ -174,8 +172,8 @@ fn solve_examples() {
         let entry = entry.unwrap();
         let path = entry.path();
         if path.is_file() {
-            let (puzzle, _solution) = import::load_path(&path, None);
-            match puzzle.plain_solve() {
+            let mut document = import::load_path(&path, None);
+            match document.puzzle().plain_solve() {
                 Ok(Report {
                     skims,
                     scrubs,

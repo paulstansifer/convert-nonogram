@@ -412,7 +412,7 @@ pub async fn disambig_candidates(
     let mut res = vec![vec![(BACKGROUND, 0.0); s.grid.first().unwrap().len()]; s.grid.len()];
     if orig_cells_left == 0 {
         // TODO: probably send a result
-        progress.send(0.0);
+        progress.send(0.0).unwrap();
         return res;
     }
 

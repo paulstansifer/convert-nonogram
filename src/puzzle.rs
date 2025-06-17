@@ -278,7 +278,7 @@ impl DynPuzzle {
         }
     }
 
-    pub fn assume_nono(self) -> Puzzle<Nono> {
+    pub fn assume_nono(&self) -> &Puzzle<Nono> {
         match self {
             DynPuzzle::Nono(puzzle) => puzzle,
             DynPuzzle::Triano(_) => panic!("must be a true nonogram!"),
@@ -286,7 +286,7 @@ impl DynPuzzle {
     }
 
     #[cfg(test)] // Until needed normally
-    pub fn assume_triano(self) -> Puzzle<Triano> {
+    pub fn assume_triano(&self) -> &Puzzle<Triano> {
         match self {
             DynPuzzle::Triano(puzzle) => puzzle,
             DynPuzzle::Nono(_) => panic!("must be a trianogram!"),
@@ -361,5 +361,50 @@ pub fn infer_format(path: &str, format_arg: Option<NonogramFormat>) -> NonogramF
         Some("html") => NonogramFormat::Html,
         Some("txt") => NonogramFormat::CharGrid,
         _ => NonogramFormat::CharGrid,
+    }
+}
+
+pub struct Document {
+    p: Option<DynPuzzle>,
+    s: Option<Solution>,
+}
+
+impl Document {
+    pub fn new(puzzle: Option<DynPuzzle>, solution: Option<Solution>) -> Document {
+        assert!(puzzle.is_some() || solution.is_some());
+        Document {
+            p: puzzle,
+            s: solution,
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn try_puzzle(&self) -> Option<&DynPuzzle> {
+        self.p.as_ref()
+    }
+
+    pub fn puzzle(&mut self) -> &DynPuzzle {
+        if self.p.is_none() {
+            self.p = Some(self.s.as_ref().unwrap().to_puzzle());
+        }
+        self.p.as_ref().unwrap()
+    }
+
+    pub fn try_solution(&self) -> Option<&Solution> {
+        self.s.as_ref()
+    }
+
+    pub fn solution(&mut self) -> anyhow::Result<&Solution> {
+        if self.s.is_none() {
+            self.s = Some(self.p.as_ref().unwrap().plain_solve()?.solution)
+        }
+        Ok(self.s.as_ref().unwrap())
+    }
+
+    pub fn take_solution(self) -> anyhow::Result<Solution> {
+        match self.s {
+            Some(s) => Ok(s),
+            None => self.p.unwrap().plain_solve().map(|r| r.solution),
+        }
     }
 }

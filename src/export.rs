@@ -7,11 +7,10 @@ use std::{
 use axohtml::{html, text};
 use image::{DynamicImage, ImageFormat, Rgb, RgbImage};
 
-use crate::puzzle::{self, Clue, DynPuzzle, Nono, NonogramFormat, Puzzle, Solution, Triano};
+use crate::puzzle::{self, Clue, Document, Nono, NonogramFormat, Puzzle, Solution, Triano};
 
 pub fn to_bytes(
-    puzzle: Option<DynPuzzle>,
-    solution: Option<&Solution>,
+    document: &mut Document,
     file_name: Option<String>,
     format: Option<NonogramFormat>,
 ) -> anyhow::Result<Vec<u8>> {
@@ -24,24 +23,19 @@ pub fn to_bytes(
         )
     });
 
-    let puzzle = puzzle.unwrap_or_else(|| solution.expect("gotta have SOMETHING").to_puzzle());
-
     let bytes = if format == NonogramFormat::Image {
         let file_name = file_name.expect("need file name to pick image format");
-        match solution {
-            Some(solution) => as_image_bytes(solution, file_name),
-            None => as_image_bytes(&puzzle.plain_solve().unwrap().solution, file_name),
-        }?
+        as_image_bytes(document.solution()?, file_name)?
     } else {
         match format {
-            NonogramFormat::Olsak => puzzle.specialize(as_olsak_nono, as_olsak_triano),
-            NonogramFormat::Webpbn => as_webpbn(&puzzle.assume_nono()),
-            NonogramFormat::Html => match puzzle {
+            NonogramFormat::Olsak => document.puzzle().specialize(as_olsak_nono, as_olsak_triano),
+            NonogramFormat::Webpbn => as_webpbn(&document.puzzle().assume_nono()),
+            NonogramFormat::Html => match &document.puzzle() {
                 puzzle::DynPuzzle::Nono(p) => as_html(&p),
                 puzzle::DynPuzzle::Triano(p) => as_html(&p),
             },
             NonogramFormat::Image => panic!(),
-            NonogramFormat::CharGrid => as_char_grid(solution.as_ref().unwrap()),
+            NonogramFormat::CharGrid => as_char_grid(document.solution()?),
         }
         .into_bytes()
     };
@@ -50,17 +44,11 @@ pub fn to_bytes(
 }
 
 pub fn save(
-    puzzle: Option<DynPuzzle>,
-    solution: Option<&Solution>,
+    document: &mut Document,
     path: &PathBuf,
     format: Option<NonogramFormat>,
 ) -> anyhow::Result<()> {
-    let bytes = to_bytes(
-        puzzle,
-        solution,
-        Some(path.to_str().unwrap().to_string()),
-        format,
-    )?;
+    let bytes = to_bytes(document, Some(path.to_str().unwrap().to_string()), format)?;
 
     Ok(std::fs::write(path, bytes)?)
 }

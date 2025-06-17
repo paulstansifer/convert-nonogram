@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::mpsc};
 use crate::{
     export::to_bytes,
     grid_solve::{self, disambig_candidates},
-    puzzle::{Color, ColorInfo, Corner, Solution, BACKGROUND},
+    puzzle::{Color, ColorInfo, Corner, Document, Solution, BACKGROUND},
 };
 use egui::{Color32, Frame, Pos2, Rect, RichText, Shape, Style, Vec2, Visuals};
 use egui_material_icons::icons;
@@ -613,14 +613,10 @@ impl NonogramGui {
                     .await;
 
                 if let Some(handle) = handle {
-                    let (puzzle, solution) =
+                    let document =
                         crate::import::load(&handle.file_name(), handle.read().await, None);
 
-                    // TODO: at least error out for unsolveable inputs
-                    let solution =
-                        solution.unwrap_or_else(|| puzzle.plain_solve().unwrap().solution);
-
-                    sender.send(solution).unwrap();
+                    sender.send(document.take_solution().unwrap()).unwrap();
                 }
             });
         }
@@ -651,9 +647,8 @@ impl NonogramGui {
                     .await;
 
                 if let Some(handle) = handle {
-                    let bytes =
-                        to_bytes(None, Some(&solution_copy), Some(handle.file_name()), None)
-                            .unwrap();
+                    let mut document = Document::new(None, Some(solution_copy));
+                    let bytes = to_bytes(&mut document, Some(handle.file_name()), None).unwrap();
                     handle.write(&bytes).await.unwrap();
                 }
             });
@@ -789,9 +784,6 @@ impl Disambiguator {
         Disambiguator {
             report: None,
             progress: 0.0,
-            // progress: AtomicUsize::new(0),
-            // running: AtomicBool::new(false),
-            // should_stop: AtomicBool::new(false),
             terminate_s: mpsc::channel().0,
             progress_r: mpsc::channel().1,
             report_r: mpsc::channel().1,

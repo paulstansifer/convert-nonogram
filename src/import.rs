@@ -9,11 +9,11 @@ use std::{
 };
 
 use crate::puzzle::{
-    self, Clue, ClueStyle, Color, ColorInfo, Corner, DynPuzzle, Nono, NonogramFormat, Puzzle,
-    Solution, Triano, BACKGROUND,
+    self, Clue, ClueStyle, Color, ColorInfo, Corner, Document, DynPuzzle, Nono, NonogramFormat,
+    Puzzle, Solution, Triano, BACKGROUND,
 };
 
-pub fn load_path(path: &PathBuf, format: Option<NonogramFormat>) -> (DynPuzzle, Option<Solution>) {
+pub fn load_path(path: &PathBuf, format: Option<NonogramFormat>) -> Document {
     let mut bytes = vec![];
     if path == &PathBuf::from("-") {
         std::io::stdin().read_to_end(&mut bytes).unwrap();
@@ -24,11 +24,7 @@ pub fn load_path(path: &PathBuf, format: Option<NonogramFormat>) -> (DynPuzzle, 
     load(&path.to_str().unwrap(), bytes, format)
 }
 
-pub fn load(
-    filename: &str,
-    bytes: Vec<u8>,
-    format: Option<NonogramFormat>,
-) -> (DynPuzzle, Option<Solution>) {
+pub fn load(filename: &str, bytes: Vec<u8>, format: Option<NonogramFormat>) -> Document {
     let input_format = puzzle::infer_format(&filename, format);
 
     match input_format {
@@ -39,25 +35,25 @@ pub fn load(
             let img = image::load_from_memory(&bytes).unwrap();
             let solution = image_to_solution(&img);
 
-            (solution.to_puzzle(), Some(solution))
+            Document::new(None, Some(solution))
         }
         NonogramFormat::Webpbn => {
             let webpbn_string = String::from_utf8(bytes).unwrap();
             let puzzle: puzzle::Puzzle<puzzle::Nono> = webpbn_to_puzzle(&webpbn_string);
 
-            (Nono::to_dyn(puzzle), None)
+            Document::new(Some(Nono::to_dyn(puzzle)), None)
         }
         NonogramFormat::CharGrid => {
             let grid_string = String::from_utf8(bytes).unwrap();
             let solution = char_grid_to_solution(&grid_string);
 
-            (solution.to_puzzle(), Some(solution))
+            Document::new(None, Some(solution))
         }
         NonogramFormat::Olsak => {
             let olsak_string = String::from_utf8(bytes).unwrap();
             let puzzle = olsak_to_puzzle(&olsak_string).unwrap();
 
-            (puzzle, None)
+            Document::new(Some(puzzle), None)
         }
     }
 }
