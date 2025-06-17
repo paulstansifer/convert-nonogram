@@ -938,3 +938,71 @@ pub fn solution_to_puzzle(solution: &Solution) -> Puzzle<Nono> {
         cols,
     }
 }
+
+pub fn bw_palette() -> HashMap<Color, ColorInfo> {
+    let mut palette = HashMap::new();
+    palette.insert(BACKGROUND, ColorInfo::default_bg());
+    palette.insert(Color(1), ColorInfo::default_fg(Color(1)));
+    palette
+}
+
+pub fn triano_palette() -> HashMap<Color, ColorInfo> {
+    let mut palette = HashMap::new();
+    palette.insert(BACKGROUND, ColorInfo::default_bg());
+    palette.insert(Color(1), ColorInfo::default_fg(Color(1)));
+
+    palette.insert(
+        Color(3),
+        ColorInfo {
+            ch: '◤',
+            name: r#"black/white"#.to_string(),
+            rgb: (0, 0, 0),
+            color: Color(3),
+            corner: Some(Corner {
+                upper: true,
+                left: true,
+            }),
+        },
+    );
+    palette.insert(
+        Color(4),
+        ColorInfo {
+            ch: '◥',
+            name: r#"white\black"#.to_string(),
+            rgb: (0, 0, 0),
+            color: Color(4),
+            corner: Some(Corner {
+                upper: true,
+                left: false,
+            }),
+        },
+    );
+    palette.insert(
+        Color(5),
+        ColorInfo {
+            ch: '◣',
+            name: r#"black\white"#.to_string(),
+            rgb: (0, 0, 0),
+            color: Color(5),
+            corner: Some(Corner {
+                upper: false,
+                left: true,
+            }),
+        },
+    );
+    palette.insert(
+        Color(6),
+        ColorInfo {
+            ch: '◢',
+            name: r#"white/black"#.to_string(),
+            rgb: (0, 0, 0),
+            color: Color(6),
+            corner: Some(Corner {
+                upper: false,
+                left: false,
+            }),
+        },
+    );
+
+    palette
+}

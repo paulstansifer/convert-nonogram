@@ -3,7 +3,8 @@ use std::{collections::HashMap, sync::mpsc};
 use crate::{
     export::to_bytes,
     grid_solve::{self, disambig_candidates},
-    puzzle::{Color, ColorInfo, Corner, Document, Solution, BACKGROUND},
+    import,
+    puzzle::{ClueStyle, Color, ColorInfo, Corner, Document, Solution, BACKGROUND},
 };
 use egui::{Color32, Frame, Pos2, Rect, RichText, Shape, Style, Vec2, Visuals};
 use egui_material_icons::icons;
@@ -75,6 +76,7 @@ struct NonogramGui {
     current_color: Color,
     scale: f32,
     opened_file_receiver: mpsc::Receiver<(Solution, String)>,
+    new_dialog: Option<NewPuzzleDialog>,
 
     undo_stack: Vec<Action>,
     redo_stack: Vec<Action>,
@@ -118,6 +120,7 @@ impl NonogramGui {
             current_color: BACKGROUND,
             scale: 10.0,
             opened_file_receiver: mpsc::channel().1,
+            new_dialog: None,
 
             undo_stack: vec![],
             redo_stack: vec![],
@@ -589,14 +592,6 @@ impl NonogramGui {
     }
 
     fn loader(&mut self, ui: &mut egui::Ui) {
-        if ui.button("New blank").clicked() {
-            self.perform(
-                Action::ReplacePicture {
-                    picture: Solution::blank_bw(20, 20),
-                },
-                ActionMood::Normal,
-            );
-        }
         if ui.button("Open").clicked() {
             let (sender, receiver) = mpsc::channel();
             self.opened_file_receiver = receiver;
@@ -664,6 +659,12 @@ impl NonogramGui {
     }
 }
 
+struct NewPuzzleDialog {
+    clue_style: crate::puzzle::ClueStyle,
+    x_size: usize,
+    y_size: usize,
+}
+
 impl eframe::App for NonogramGui {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Styling. Has to be here instead of `edit_image` to take effect on the Web.
@@ -697,6 +698,59 @@ impl eframe::App for NonogramGui {
                 {
                     self.scale = (self.scale - 2.0).max(1.0);
                 }
+                if ui.button("New blank").clicked() {
+                    self.new_dialog = Some(NewPuzzleDialog {
+                        clue_style: self.picture.clue_style,
+                        x_size: self.picture.x_size(),
+                        y_size: self.picture.y_size(),
+                    });
+                }
+                let mut new_picture = None;
+                if let Some(dialog) = self.new_dialog.as_mut() {
+                    egui::Window::new("New puzzle").show(ctx, |ui| {
+                        ui.add(
+                            egui::Slider::new(&mut dialog.x_size, 5..=100)
+                                .step_by(5.0)
+                                .text("x size"),
+                        );
+                        ui.add(
+                            egui::Slider::new(&mut dialog.y_size, 5..=100)
+                                .step_by(5.0)
+                                .text("y size"),
+                        );
+                        ui.radio_value(
+                            &mut dialog.clue_style,
+                            crate::puzzle::ClueStyle::Nono,
+                            "Nonogram",
+                        );
+                        ui.radio_value(
+                            &mut dialog.clue_style,
+                            crate::puzzle::ClueStyle::Triano,
+                            "Trianogram",
+                        );
+                        if ui.button("Ok").clicked() {
+                            new_picture = Some(Solution {
+                                grid: vec![vec![BACKGROUND; dialog.y_size]; dialog.x_size],
+                                palette: match dialog.clue_style {
+                                    ClueStyle::Nono => import::bw_palette(),
+                                    ClueStyle::Triano => import::triano_palette(),
+                                },
+                                clue_style: dialog.clue_style,
+                            });
+                        }
+                    });
+                }
+
+                if let Some(new_picture) = new_picture {
+                    self.perform(
+                        Action::ReplacePicture {
+                            picture: new_picture,
+                        },
+                        ActionMood::Normal,
+                    );
+                    self.new_dialog = None;
+                }
+
                 self.loader(ui);
                 self.saver(ui);
             });
