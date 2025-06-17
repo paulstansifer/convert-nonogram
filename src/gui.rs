@@ -860,8 +860,10 @@ impl Disambiguator {
     }
 
     fn disambig_widget(&mut self, picture: &Solution, ui: &mut egui::Ui) {
-        let progress = self.progress_r.try_recv().unwrap_or(0.0);
-        let report_running = progress > 0.0 && progress < 1.0;
+        while let Ok(progress) = self.progress_r.try_recv() {
+            self.progress = progress;
+        }
+        let report_running = self.progress > 0.0 && self.progress < 1.0;
 
         if !report_running {
             if ui.button("Disambiguate!").clicked() {
@@ -875,7 +877,6 @@ impl Disambiguator {
                 let solution = picture.clone();
                 spawn_async(async move {
                     let result = disambig_candidates(&solution, p_s, t_r).await;
-
                     r_s.send(result).unwrap();
                 });
             }
@@ -884,8 +885,11 @@ impl Disambiguator {
                 self.terminate_s.send(()).unwrap();
             }
         }
+        if let Ok(report) = self.report_r.try_recv() {
+            self.report = Some(report);
+        }
 
-        ui.add(egui::ProgressBar::new(progress).animate(report_running));
+        ui.add(egui::ProgressBar::new(self.progress).animate(report_running));
         if ui
             .add_enabled(self.report.is_some(), egui::Button::new("Clear"))
             .clicked()

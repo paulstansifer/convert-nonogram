@@ -443,14 +443,16 @@ pub async fn disambig_candidates(
                 }
             }
 
+            if y % 5 == 0 {
+                progress
+                    .send((x * s.y_size() + y) as f32 / (s.x_size() * s.y_size()) as f32)
+                    .unwrap();
+            }
+
             // Works on wasm or native:
             tokio::task::yield_now().await;
 
             res[x][y] = (best_color, (best_result as f32) / (orig_cells_left as f32));
-
-            progress
-                .send((x * s.y_size() + y) as f32 / (s.x_size() * s.y_size()) as f32)
-                .unwrap();
 
             if terminate.try_recv().is_ok() {
                 return res;
