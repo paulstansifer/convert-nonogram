@@ -1,6 +1,6 @@
-use std::{fmt::Debug, vec};
+use std::{fmt::Debug, sync::mpsc, vec};
 
-use anyhow::{bail, Context};
+use anyhow::Context;
 use colored::Colorize;
 use ndarray::{ArrayView1, ArrayViewMut1};
 
@@ -393,11 +393,11 @@ pub fn solve<C: Clue>(
     // Not printing; we probably already know what it looks like!
 }
 
-pub fn disambig_candidates(
+pub async fn disambig_candidates(
     s: &Solution,
-    progress: &std::sync::atomic::AtomicUsize,
-    should_stop: &std::sync::atomic::AtomicBool,
-) -> anyhow::Result<Vec<Vec<(Color, f32)>>> {
+    progress: mpsc::Sender<f32>,
+    terminate: mpsc::Receiver<()>,
+) -> Vec<Vec<(Color, f32)>> {
     let mut solve_cache = crate::puzzle::DynSolveCache::new();
 
     let p = s.to_puzzle();
@@ -405,11 +405,15 @@ pub fn disambig_candidates(
     let Report {
         cells_left: orig_cells_left,
         ..
-    } = solve_cache.solve(&p)?;
+    } = solve_cache
+        .solve(&p)
+        .expect("started from a solution; shouldn't be possible!");
 
     let mut res = vec![vec![(BACKGROUND, 0.0); s.grid.first().unwrap().len()]; s.grid.len()];
     if orig_cells_left == 0 {
-        bail!("No ambiguities!");
+        // TODO: probably send a result
+        progress.send(0.0);
+        return res;
     }
 
     for x in 0..s.x_size() {
@@ -431,7 +435,7 @@ pub fn disambig_candidates(
                 let Report {
                     cells_left: new_cells_left,
                     ..
-                } = solve_cache.solve(&new_solution.to_puzzle())?;
+                } = solve_cache.solve(&new_solution.to_puzzle()).expect("");
 
                 if new_cells_left < best_result {
                     best_result = new_cells_left;
@@ -439,19 +443,21 @@ pub fn disambig_candidates(
                 }
             }
 
+            // Works on wasm or native:
+            tokio::task::yield_now().await;
+
             res[x][y] = (best_color, (best_result as f32) / (orig_cells_left as f32));
 
-            progress.store(
-                ((x * s.y_size() + y) * 10_000) / (s.x_size() * s.y_size()),
-                std::sync::atomic::Ordering::Relaxed,
-            );
+            progress
+                .send((x * s.y_size() + y) as f32 / (s.x_size() * s.y_size()) as f32)
+                .unwrap();
 
-            if should_stop.load(std::sync::atomic::Ordering::Relaxed) {
-                bail!("terminated");
+            if terminate.try_recv().is_ok() {
+                return res;
             }
         }
     }
-    progress.store(10_000, std::sync::atomic::Ordering::Relaxed);
+    progress.send(1.0).unwrap();
 
-    Ok(res)
+    return res;
 }

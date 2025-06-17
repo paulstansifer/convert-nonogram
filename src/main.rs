@@ -7,10 +7,7 @@ mod gui;
 mod import;
 mod line_solve;
 mod puzzle;
-use std::{
-    path::PathBuf,
-    sync::atomic::{AtomicBool, AtomicUsize},
-};
+use std::path::PathBuf;
 
 use clap::Parser;
 use import::quality_check;
@@ -74,10 +71,16 @@ fn main() -> std::io::Result<()> {
     } else if args.disambiguate {
         let solution =
             solution.unwrap_or_else(|| puzzle.plain_solve().expect("impossible puzzle").solution);
-        let progress = AtomicUsize::new(0);
-        let should_stop = AtomicBool::new(false);
-        let disambig =
-            grid_solve::disambig_candidates(&solution, &progress, &should_stop).expect("");
+
+        let disambig = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(grid_solve::disambig_candidates(
+                &solution,
+                std::sync::mpsc::channel().0,
+                std::sync::mpsc::channel().1,
+            ));
 
         let mut best_result = f32::MAX;
         for row in &disambig {

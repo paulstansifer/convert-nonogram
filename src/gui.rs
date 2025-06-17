@@ -1,11 +1,4 @@
-use std::{
-    collections::HashMap,
-    sync::{
-        atomic::{AtomicBool, AtomicUsize},
-        mpsc, Arc, Mutex,
-    },
-    thread,
-};
+use std::{collections::HashMap, sync::mpsc};
 
 use crate::{
     export::to_bytes,
@@ -60,7 +53,7 @@ pub fn edit_image(solution: Solution) {
 use wasm_bindgen_futures::spawn_local as spawn_async;
 
 #[cfg(not(target_arch = "wasm32"))]
-fn spawn_async<F>(future: F)
+pub fn spawn_async<F>(future: F)
 where
     F: std::future::Future<Output = ()> + 'static + std::marker::Send,
 {
@@ -90,7 +83,7 @@ struct NonogramGui {
 
     solve_report: String,
     report_stale: bool,
-    disambiguator: Arc<Disambiguator>,
+    disambiguator: Disambiguator,
 
     solved_mask: Vec<Vec<bool>>,
 }
@@ -132,7 +125,7 @@ impl NonogramGui {
 
             solve_report: "".to_string(),
             report_stale: true,
-            disambiguator: Arc::new(Disambiguator::new()),
+            disambiguator: Disambiguator::new(),
 
             solved_mask,
         }
@@ -542,7 +535,7 @@ impl NonogramGui {
             }
 
             let mut shapes = vec![];
-            let disambig_report = self.disambiguator.report.lock().unwrap();
+            let disambig_report = &self.disambiguator.report;
 
             for y in 0..y_size {
                 for x in 0..x_size {
@@ -767,7 +760,11 @@ impl eframe::App for NonogramGui {
 
                     ui.separator();
 
-                    Disambiguator::disambig_widget(self.disambiguator.clone(), self, ui);
+                    Disambiguator::disambig_widget(&mut self.disambiguator, &self.picture, ui);
+
+                    if self.disambiguator.report.is_some() || self.disambiguator.progress > 0.0 {
+                        self.report_stale = true; // hide the dots while disambiguating
+                    }
                 });
 
                 self.canvas(ui);
@@ -777,77 +774,68 @@ impl eframe::App for NonogramGui {
 }
 
 struct Disambiguator {
-    report: Mutex<Option<Vec<Vec<(Color, f32)>>>>,
-    progress: std::sync::atomic::AtomicUsize,
-    running: std::sync::atomic::AtomicBool,
-    should_stop: std::sync::atomic::AtomicBool,
+    report: Option<Vec<Vec<(Color, f32)>>>,
+    // progress: std::sync::atomic::AtomicUsize,
+    // running: std::sync::atomic::AtomicBool,
+    // should_stop: std::sync::atomic::AtomicBool,
+    terminate_s: mpsc::Sender<()>,
+    progress_r: mpsc::Receiver<f32>,
+    progress: f32,
+    report_r: mpsc::Receiver<Vec<Vec<(Color, f32)>>>,
 }
 
 impl Disambiguator {
     fn new() -> Self {
         Disambiguator {
-            report: Mutex::new(None),
-            progress: AtomicUsize::new(0),
-            running: AtomicBool::new(false),
-            should_stop: AtomicBool::new(false),
+            report: None,
+            progress: 0.0,
+            // progress: AtomicUsize::new(0),
+            // running: AtomicBool::new(false),
+            // should_stop: AtomicBool::new(false),
+            terminate_s: mpsc::channel().0,
+            progress_r: mpsc::channel().1,
+            report_r: mpsc::channel().1,
         }
     }
 
     // Must do this any time the resolution changes!
     // (Currently that only happens through `ReplacePicture`)
-    fn reset(&self) {
-        *self.report.lock().unwrap() = None;
-        self.progress.store(0, std::sync::atomic::Ordering::Relaxed);
-        self.running
-            .store(false, std::sync::atomic::Ordering::Relaxed);
-        self.should_stop
-            .store(false, std::sync::atomic::Ordering::Relaxed);
+    fn reset(&mut self) {
+        self.report = None;
     }
 
-    fn disambig_widget(disambiguator: Arc<Self>, overall_gui: &mut NonogramGui, ui: &mut egui::Ui) {
-        let progress = disambiguator
-            .progress
-            .load(std::sync::atomic::Ordering::Relaxed);
-        let report_running = progress > 0 && progress < 9_990;
+    fn disambig_widget(&mut self, picture: &Solution, ui: &mut egui::Ui) {
+        let progress = self.progress_r.try_recv().unwrap_or(0.0);
+        let report_running = progress > 0.0 && progress < 1.0;
 
         if !report_running {
             if ui.button("Disambiguate!").clicked() {
-                overall_gui.report_stale = true; // Just to clear the dots from the screen.
+                let (p_s, p_r) = mpsc::channel();
+                let (r_s, r_r) = mpsc::channel();
+                let (t_s, t_r) = mpsc::channel();
+                self.progress_r = p_r;
+                self.terminate_s = t_s;
+                self.report_r = r_r;
 
-                let t_d = disambiguator.clone();
-                let solution = overall_gui.picture.clone();
-                thread::spawn(move || {
-                    match disambig_candidates(&solution, &t_d.progress, &t_d.should_stop) {
-                        Ok(rep) => {
-                            *t_d.report.lock().unwrap() = Some(rep);
-                        }
-                        Err(_) => {
-                            t_d.reset();
-                        }
-                    }
+                let solution = picture.clone();
+                spawn_async(async move {
+                    let result = disambig_candidates(&solution, p_s, t_r).await;
+
+                    r_s.send(result).unwrap();
                 });
             }
         } else {
             if ui.button("Stop").clicked() {
-                // HACK: we're using `progress`` as a 2-way channel.
-                disambiguator
-                    .should_stop
-                    .store(true, std::sync::atomic::Ordering::Relaxed);
+                self.terminate_s.send(()).unwrap();
             }
         }
 
-        ui.add(egui::ProgressBar::new(progress as f32 / 10_000.0).animate(report_running));
+        ui.add(egui::ProgressBar::new(progress).animate(report_running));
         if ui
-            .add_enabled(
-                !disambiguator.report.lock().unwrap().is_none(),
-                egui::Button::new("Clear"),
-            )
+            .add_enabled(self.report.is_some(), egui::Button::new("Clear"))
             .clicked()
         {
-            *disambiguator.report.lock().unwrap() = None;
-            disambiguator
-                .progress
-                .store(0, std::sync::atomic::Ordering::Relaxed);
+            self.report = None;
         }
     }
 }
