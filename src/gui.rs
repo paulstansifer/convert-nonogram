@@ -71,9 +71,10 @@ where
 
 struct NonogramGui {
     picture: Solution,
+    file_name: String,
     current_color: Color,
     scale: f32,
-    opened_file_receiver: mpsc::Receiver<Solution>,
+    opened_file_receiver: mpsc::Receiver<(Solution, String)>,
 
     undo_stack: Vec<Action>,
     redo_stack: Vec<Action>,
@@ -113,6 +114,7 @@ impl NonogramGui {
 
         NonogramGui {
             picture,
+            file_name: "blank.xml".to_string(),
             current_color: BACKGROUND,
             scale: 10.0,
             opened_file_receiver: mpsc::channel().1,
@@ -616,22 +618,27 @@ impl NonogramGui {
                     let document =
                         crate::import::load(&handle.file_name(), handle.read().await, None);
 
-                    sender.send(document.take_solution().unwrap()).unwrap();
+                    sender
+                        .send((document.take_solution().unwrap(), handle.file_name()))
+                        .unwrap();
                 }
             });
         }
 
-        if let Ok(solution) = self.opened_file_receiver.try_recv() {
+        if let Ok((solution, file)) = self.opened_file_receiver.try_recv() {
             self.perform(
                 Action::ReplacePicture { picture: solution },
                 ActionMood::Normal,
             );
+            self.file_name = file;
         }
     }
 
     fn saver(&mut self, ui: &mut egui::Ui) {
         if ui.button("Save").clicked() {
             let solution_copy = self.picture.clone();
+            let file_copy = self.file_name.clone();
+
             spawn_async(async move {
                 let handle = rfd::AsyncFileDialog::new()
                     .add_filter(
@@ -643,11 +650,12 @@ impl NonogramGui {
                     .add_filter("chargrid", &["txt"])
                     .add_filter("Olsak", &["g"])
                     .add_filter("HTML (for printing)", &["html"])
+                    .set_file_name(file_copy)
                     .save_file()
                     .await;
 
                 if let Some(handle) = handle {
-                    let mut document = Document::new(None, Some(solution_copy));
+                    let mut document = Document::new(None, Some(solution_copy), handle.file_name());
                     let bytes = to_bytes(&mut document, Some(handle.file_name()), None).unwrap();
                     handle.write(&bytes).await.unwrap();
                 }

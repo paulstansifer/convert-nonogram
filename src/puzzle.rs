@@ -367,15 +367,23 @@ pub fn infer_format(path: &str, format_arg: Option<NonogramFormat>) -> NonogramF
 pub struct Document {
     p: Option<DynPuzzle>,
     s: Option<Solution>,
+    /// Path if native, just a filename, if on the Web
+    file: String,
 }
 
 impl Document {
-    pub fn new(puzzle: Option<DynPuzzle>, solution: Option<Solution>) -> Document {
+    pub fn new(puzzle: Option<DynPuzzle>, solution: Option<Solution>, file: String) -> Document {
         assert!(puzzle.is_some() || solution.is_some());
         Document {
             p: puzzle,
             s: solution,
+            file,
         }
+    }
+
+    #[allow(dead_code)] // it's a little weird how this is easy to get but never used
+    pub fn file(&self) -> &str {
+        &self.file
     }
 
     #[allow(dead_code)]

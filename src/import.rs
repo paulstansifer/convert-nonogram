@@ -35,25 +35,25 @@ pub fn load(filename: &str, bytes: Vec<u8>, format: Option<NonogramFormat>) -> D
             let img = image::load_from_memory(&bytes).unwrap();
             let solution = image_to_solution(&img);
 
-            Document::new(None, Some(solution))
+            Document::new(None, Some(solution), filename.to_string())
         }
         NonogramFormat::Webpbn => {
             let webpbn_string = String::from_utf8(bytes).unwrap();
             let puzzle: puzzle::Puzzle<puzzle::Nono> = webpbn_to_puzzle(&webpbn_string);
 
-            Document::new(Some(Nono::to_dyn(puzzle)), None)
+            Document::new(Some(Nono::to_dyn(puzzle)), None, filename.to_string())
         }
         NonogramFormat::CharGrid => {
             let grid_string = String::from_utf8(bytes).unwrap();
             let solution = char_grid_to_solution(&grid_string);
 
-            Document::new(None, Some(solution))
+            Document::new(None, Some(solution), filename.to_string())
         }
         NonogramFormat::Olsak => {
             let olsak_string = String::from_utf8(bytes).unwrap();
             let puzzle = olsak_to_puzzle(&olsak_string).unwrap();
 
-            Document::new(Some(puzzle), None)
+            Document::new(Some(puzzle), None, filename.to_string())
         }
     }
 }
