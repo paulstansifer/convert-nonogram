@@ -752,6 +752,7 @@ impl eframe::App for NonogramGui {
                 }
 
                 self.loader(ui);
+                ui.add(egui::TextEdit::singleline(&mut self.file_name).desired_width(150.0));
                 self.saver(ui);
             });
             ui.separator();
