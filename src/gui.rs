@@ -89,20 +89,19 @@ struct NonogramGui {
     picture: Solution,
     file_name: String,
     current_color: Color,
+    drag_start_color: Color,
     scale: f32,
     opened_file_receiver: mpsc::Receiver<(Solution, String)>,
     new_dialog: Option<NewPuzzleDialog>,
+    auto_solve: bool,
+    lines_to_affect_string: String,
 
     undo_stack: Vec<Action>,
     redo_stack: Vec<Action>,
 
-    auto_solve: bool,
-    lines_to_affect_string: String,
-
     solve_report: String,
     report_stale: bool,
     disambiguator: Disambiguator,
-
     solved_mask: Vec<Vec<bool>>,
 }
 
@@ -129,24 +128,30 @@ impl NonogramGui {
         egui_material_icons::initialize(&cc.egui_ctx);
         let solved_mask = vec![vec![false; picture.grid[0].len()]; picture.grid.len()];
 
+        let mut current_color = BACKGROUND;
+        for (c, ci) in picture.palette.iter() {
+            if ci.rgb == (0, 0, 0) && ci.corner.is_none() {
+                current_color = *c;
+            }
+        }
+
         NonogramGui {
             picture,
             file_name: "blank.xml".to_string(),
-            current_color: BACKGROUND,
+            current_color,
+            drag_start_color: current_color,
             scale: 10.0,
             opened_file_receiver: mpsc::channel().1,
             new_dialog: None,
+            auto_solve: false,
+            lines_to_affect_string: "5".to_string(),
 
             undo_stack: vec![],
             redo_stack: vec![],
 
-            auto_solve: false,
-            lines_to_affect_string: "5".to_string(),
-
             solve_report: "".to_string(),
             report_stale: true,
             disambiguator: Disambiguator::new(),
-
             solved_mask,
         }
     }
@@ -460,6 +465,7 @@ impl NonogramGui {
                 let mut edited_color = [r as f32 / 256.0, g as f32 / 256.0, b as f32 / 256.0];
 
                 if ui.color_edit_button_rgb(&mut edited_color).changed() {
+                    // TODO: this should probably also be undoable
                     picked_color = *color;
                     color_info.rgb = (
                         (edited_color[0] * 256.0) as u8,
@@ -484,19 +490,26 @@ impl NonogramGui {
         }
 
         if let Some(removed_color) = removed_color {
-            for row in self.picture.grid.iter_mut() {
+            let mut new_picture = self.picture.clone();
+            for row in new_picture.grid.iter_mut() {
                 for cell in row.iter_mut() {
                     if *cell == removed_color {
                         *cell = self.current_color;
                     }
                 }
             }
-
-            self.picture.palette.remove(&removed_color);
+            new_picture.palette.remove(&removed_color);
+            self.perform(
+                Action::ReplacePicture {
+                    picture: new_picture,
+                },
+                ActionMood::Normal,
+            );
         }
         if add_color {
             let next_color = Color(self.picture.palette.keys().map(|k| k.0).max().unwrap() + 1);
-            self.picture.palette.insert(
+            let mut new_picture = self.picture.clone();
+            new_picture.palette.insert(
                 next_color,
                 ColorInfo {
                     ch: (next_color.0 + 65) as char, // TODO: will break chargrid export
@@ -505,6 +518,12 @@ impl NonogramGui {
                     color: next_color,
                     corner: None,
                 },
+            );
+            self.perform(
+                Action::ReplacePicture {
+                    picture: new_picture,
+                },
+                ActionMood::Normal,
             );
         }
     }
@@ -540,16 +559,16 @@ impl NonogramGui {
                         } else {
                             self.current_color
                         };
+                        let mood = if response.clicked() || response.drag_started() {
+                            self.drag_start_color = new_color;
+                            ActionMood::Normal
+                        } else {
+                            ActionMood::Merge
+                        };
+
                         let mut changes = HashMap::new();
-                        changes.insert((x, y), new_color);
-                        self.perform(
-                            Action::ChangeColor { changes },
-                            if response.clicked() || response.drag_started() {
-                                ActionMood::Normal
-                            } else {
-                                ActionMood::Merge
-                            },
-                        );
+                        changes.insert((x, y), self.drag_start_color);
+                        self.perform(Action::ChangeColor { changes }, mood);
                     }
                 }
             }
