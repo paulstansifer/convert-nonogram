@@ -5,6 +5,7 @@ use colored::Colorize;
 use ndarray::{ArrayView1, ArrayViewMut1};
 
 use crate::{
+    gui,
     line_solve::{scrub_heuristic, scrub_line, skim_heuristic, skim_line, Cell, ScrubReport},
     puzzle::{Clue, Color, Puzzle, Solution, BACKGROUND},
 };
@@ -449,8 +450,7 @@ pub async fn disambig_candidates(
                     .unwrap();
             }
 
-            // Works on wasm or native:
-            tokio::task::yield_now().await;
+            gui::yield_now().await;
 
             res[x][y] = (best_color, (best_result as f32) / (orig_cells_left as f32));
 

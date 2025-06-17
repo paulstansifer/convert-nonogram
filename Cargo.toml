@@ -47,6 +47,8 @@ getrandom = { version = "0.3", features = ["wasm_js"] }
 getrandom_0_2 = { package = "getrandom", version = "0.2", features = ["js"] }
 wasm-bindgen-futures = "0.4.50"
 web-sys = "0.3.77"
+js-sys = "0.3.77"         # just needed for yielding!?
+wasm-bindgen = "0.2.100"  # just needed for yielding!?
 
 [profile.release]
 opt-level = 2 # fast and small wasm

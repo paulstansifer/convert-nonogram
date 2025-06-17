@@ -70,6 +70,21 @@ where
     });
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn yield_now() {
+    tokio::task::yield_now().await;
+}
+
+#[cfg(target_arch = "wasm32")]
+pub async fn yield_now() {
+    //surely there's a better way...
+    wasm_bindgen_futures::JsFuture::from(js_sys::Promise::resolve(
+        &wasm_bindgen::JsValue::UNDEFINED,
+    ))
+    .await
+    .unwrap();
+}
+
 struct NonogramGui {
     picture: Solution,
     file_name: String,
