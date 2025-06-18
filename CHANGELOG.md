@@ -1,6 +1,6 @@
 ## Changelog
 
-## 0.2.2 -
+## 0.2.2 - 2025-06-18
 ### Added
  - Can now run on the Web
 ### Fixed
