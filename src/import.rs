@@ -73,13 +73,15 @@ pub fn image_to_solution(image: &DynamicImage) -> Solution {
     let mut next_char = 'a';
     let mut next_color_idx: u8 = 1; // BACKGROUND is 0
 
-    // Gather the palette+
+    // Gather the palette
     for y in 0..height {
         for x in 0..width {
             let pixel: Rgba<u8> = image.get_pixel(x, y);
             let color = palette.entry(pixel).or_insert_with(|| {
                 let this_char = next_char;
-                let (r, g, b, _) = pixel.channels4();
+                let [r, g, b] = pixel.channels()[0..3] else {
+                    panic!("Image with fewer than three channels?")
+                };
                 let this_color = Color(next_color_idx);
 
                 next_color_idx += 1;

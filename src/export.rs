@@ -349,13 +349,14 @@ where
 
     let dyn_image: DynamicImage = image::DynamicImage::ImageRgb8(image);
 
-    let mut writer = std::io::BufWriter::new(Vec::new());
+    let mut writer = std::io::BufWriter::new(std::io::Cursor::new(Vec::new()));
 
     dyn_image.write_to(&mut writer, image_format)?;
 
     Ok(writer
         .into_inner()
-        .expect("Couldn't get inner Vec<u8> from BufWriter"))
+        .expect("Couldn't get inner Vec<u8> from BufWriter")
+        .into_inner())
 }
 
 pub fn as_char_grid(solution: &Solution) -> String {

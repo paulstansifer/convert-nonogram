@@ -10,14 +10,14 @@ readme = "README.md"
 repository = "https://github.com/paulstansifer/number-loom"
 
 [dependencies]
-image = "0.23.11"
+image = "0.25"
 quick-xml = "0.37.1"
-indoc = "1.0"
+indoc = "2"
 ndarray = "0.16.1"
 anyhow = "1.0.93"
 clap = { version = "4.5.21", features = ["derive"] }
 colorize = "0.1.0"
-colored = "2.1.0"
+colored = "3"
 regex = "1.11.1"
 roxmltree = "0.20.0"
 axohtml = "0.5.0"
