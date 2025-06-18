@@ -38,7 +38,7 @@ pub fn edit_image(solution: Solution) {
             .dyn_into::<web_sys::HtmlCanvasElement>()
             .expect("the_canvas_id was not a HtmlCanvasElement");
 
-        let _start_result = eframe::WebRunner::new()
+        let start_result = eframe::WebRunner::new()
             .start(
                 canvas,
                 web_options,
@@ -46,7 +46,17 @@ pub fn edit_image(solution: Solution) {
             )
             .await;
 
-        // The example code removes the spinner here, but it doesn't seem necessary.
+        // Remove the loading text and spinner:
+        if let Some(loading_text) = document.get_element_by_id("loading_text") {
+            match start_result {
+                Ok(_) => {
+                    loading_text.remove();
+                }
+                Err(e) => {
+                    panic!("Failed to start eframe: {:?}", e);
+                }
+            }
+        }
     });
 }
 
@@ -857,7 +867,9 @@ impl eframe::App for NonogramGui {
 
                     Disambiguator::disambig_widget(&mut self.disambiguator, &self.picture, ui);
 
-                    if self.disambiguator.report.is_some() || self.disambiguator.progress > 0.0 {
+                    if self.disambiguator.report.is_some()
+                        || (self.disambiguator.progress > 0.0 && self.disambiguator.progress < 1.0)
+                    {
                         self.report_stale = true; // hide the dots while disambiguating
                     }
                 });
@@ -894,6 +906,7 @@ impl Disambiguator {
     // (Currently that only happens through `ReplacePicture`)
     fn reset(&mut self) {
         self.report = None;
+        self.progress = 0.0;
     }
 
     fn disambig_widget(&mut self, picture: &Solution, ui: &mut egui::Ui) {
@@ -919,7 +932,8 @@ impl Disambiguator {
             }
         } else {
             if ui.button("Stop").clicked() {
-                self.terminate_s.send(()).unwrap();
+                let _ = self.terminate_s.send(()); // Don't panic if it's already gone!
+                self.progress = 0.0;
             }
         }
         if let Ok(report) = self.report_r.try_recv() {

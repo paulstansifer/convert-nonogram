@@ -6,7 +6,7 @@
 
 *Spot an uninvasive change that makes the solver able to solve the puzzle!*
 
-It's still pretty janky, but it's also the most powerful such tool I know of. In particular, it can offer suggestions for how to make an unsolveable puzzle solveable!
+It's still pretty janky, but it's also the most powerful such tool I know of. In particular, it can offer suggestions for how to make an unsolveable puzzle more solveable!  You can use it [in your browser](https://paul-stansifer.itch.io/number-loom), or install it on your own machine (see below).
 
 ## Features
 
@@ -23,15 +23,17 @@ It's still pretty janky, but it's also the most powerful such tool I know of. In
 
 ## Installation and usage
 
-If you don't have `cargo` on your computer already, [install it through `rustup`](https://doc.rust-lang.org/cargo/getting-started/installation.html).
+`number-loom` can run in your browser! I've published it at https://paul-stansifer.itch.io/number-loom.
+
+You can also install it to your machine if you're comfortable with the command line. The first step is to [install `cargo` through `rustup`](https://doc.rust-lang.org/cargo/getting-started/installation.html) if you haven't already.
 
 Then run `cargo install number-loom`.
 
 To open the gui: `number-loom` or `number-loom examples/png/keys.png --gui`.
 
-To solve a puzzle from the command line, do `number-loom examples/png/hair_dryer.png`.
+To solve a puzzle from the command line, do `number-loom examples/png/hair_dryer.png`.  Adding `--disambiguate` will attempt to find disambiguations if it can't solve it.
 
-To convert a puzzle from the command line, do `number-loom examples/png/hair_dryer.png /tmp/hair_dryer.xml`.  Use `--input-format` or `--output-format` to explicitly select `webpbn`, `olsak`, `image`, `char-grid`, or `html`. (The image format is still inferred from the filename.)
+To convert a puzzle from the command line, do `number-loom examples/png/hair_dryer.png /tmp/hair_dryer.xml`.  Use `--input-format` or `--output-format` if you want to explicitly select a format: `webpbn`, `olsak`, `image`, `char-grid`, or `html`. (The image format is still inferred from the filename.)
 
 ## Solver
 
@@ -62,6 +64,16 @@ This may take a little bit of time, but it's typically reasonably fast for puzzl
 
 It works by simply re-solving the puzzle with every possible one-square change. But it caches intermediate deductions to speed the process up. Typically, the more ambiguous the puzzle, the faster it is, so doing a guess-and-check with "auto-solve" turned on is a better way to hammer out the last few ambiguities.
 
+## Trianograms
+
+Trianograms are a rare variant. "Mindful Puzzle Books" publishes a book by that name. The Olšák solver also supports this variant, crediting the concept to "the journal Maľované krížovky, Silentium s.r.o, Bratislava", but I haven't been able to find out more. There are puzzles with triangles at [griddlers.net](http://griddlers.net/), but I'm not sure if they use the same rules.
+
+A Trianogram has black, white, and four additional "colors": triangles that divide the cell into half-black and half-white. The triangles always serve as "caps" to a clue; for example "◢2◤" denotes that the four cells "◢■■◤" will appear. They will be consecutive, despite the fact that the caps are different "colors". Two consecutive clues will only be guaranteed to be separated by a space if neither of them is capped on the facing sides.
+
+The Olšák solver, I believe, supports multi-color trianograms, but `number-loom` does not yet.
+
+Only the `olsak` and `char-grid` formats can store trianograms.
+
 ## Usage with other solvers
 
 ### `pbnsolve`
@@ -77,20 +89,11 @@ number-loom examples/png/stroller.png - --output-format webpbn | pbnsolve -tu
 
 It gives some difficulty information. I believe that "Lines Processed" very roughly corresponds to `number-loom`'s measurement of skims and scrubs (summed together). But `pbnsolve` is currently more powerful for difficult puzzles. For example, it can solve the stroller puzzle, even if you use `-aE` to restrict it to line logic.
 
-### `nonogrid`
 
-`nonogrid`, written in Rust, can provide a nice visual representation of ambiguities on the command line and is capable of non-line-logic solving.
+### The Olšák solver
+The [Olšák solver] comes in a tarball and doesn't even have a makefile! (Just do `gcc grid.c -o grid` to build it.) It accepts a different input format. It does provide some difficulty information, but I haven't yet learned to understand it.
 
-Make sure to install `nonogrid` with `cargo install --features=xml,web,sat nonogrid` to allow parsing the XML-based webpbn format (and to enable directly downloading nonograms from the web, and the SAT-based solver, because why not). Then, to evaluate an image, do:
-
-```
-number-loom examples/png/stroller.png - --output-format webpbn | nonogrid
-```
-
-### The Olsak solver
-The [Olsak solver] comes in a tarball and doesn't even have a makefile! (Just do `gcc grid.c -o grid` to build it.) It accepts a different input format. It does provide some difficulty information, but I haven't yet learned to understand it.
-
-[Olsak solver]:  http://www.olsak.net/grid.html
+[Olšák solver]:  http://www.olsak.net/grid.html
 
 ```
 number-loom examples/png/stroller.png - --output-format olsak | grid -
